@@ -1,5 +1,23 @@
 <?php
 
+//Массив всех карточек тела теста без папок (карточки из теста извлекаются)
+function GetExtractedCards($body){
+  $ret = [];
+  for ($i=0; $i < count($body); $i++) { 
+    $card = $body[$i];
+    $cardType = mb_strtolower($card['type']);
+    if( $cardType != 'folder'){
+      $ret[] = $body[$i];
+    }else{
+      $sBody = $body[$i]['body'];
+      for ($j=0; $j < count($sBody); $j++) { 
+        $ret[] = $sBody[$j];
+      }
+    }
+  }
+  return $ret;
+}
+
 function GetCardNoAnswer($card)//Получение карточки вопроса без правильного ответа
 {
   $ret = $card;
@@ -159,7 +177,7 @@ function test_send()
   
   $qt->execute();
   if ($origin = $qt->fetch(PDO::FETCH_ASSOC)) {
-    $originCards = json_decode($origin['body'], true);
+    $originCards = GetExtractedCards(json_decode($origin['body'], true));
     $max_score = 0;
     $score = 0;
     for ($i = 0; $i < count($cards); $i++) {
@@ -275,10 +293,36 @@ function get_test_editor()
 //Генерирует тело теста исхордя из параметров
 function GenerateTestBody($body, $settings = []){
   $cards = json_decode($body, true);
+  $ret = [];
   for ($i = 0; $i < count($cards); $i++) {
-    $cards[$i] = GetCardNoAnswer($cards[$i]);
+    if($cards[$i]['type'] != 'Folder'){//Обычная карточка:
+      $ret[] = GetCardNoAnswer($cards[$i]);
+    }else{//Папка:
+      $props = $cards[$i]['props'];
+      $sBody = $cards[$i]['body'];  
+      $isShuffle = false;
+      $select = count($sBody);
+      //Установка параметров:
+      if(isset($props)){
+        $isShuffle = boolval($props['isShuffle']);
+        $select = intval($props['select']);
+        $select = $select > count($sBody) ? count($sBody) : $select;
+        $select = $select < 0 ? 0 : $select;
+      }
+      //Добавление карточек:
+      if($isShuffle){
+        shuffle($sBody);
+        for ($j=0; $j < $select; $j++) { 
+          $ret[] = GetCardNoAnswer($sBody[$j]);
+        }
+      }else{
+        for ($j=0; $j < count($sBody); $j++) {
+          $ret[] = GetCardNoAnswer($sBody[$j]);
+        }
+      }
+    }
   }
-  return $cards;
+  return $ret;
 }
 
 
