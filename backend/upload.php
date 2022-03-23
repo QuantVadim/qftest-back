@@ -1,7 +1,9 @@
 <?php
+
 include 'modules/classSimpleImage.php';
 include 'db.php';
-    
+include 'config.php';    
+
 $USER = false;
 if(isset($_POST['info']) && $info = json_decode($_POST['info']) 
 ){
@@ -22,7 +24,7 @@ if($USER != false){
     if ( 0 < $_FILES['image']['error'] ) {
         echo 'Error: ' . $_FILES['image']['error'] . '<br>';
     }
-    else if($_FILES['image']['size'] < 6291456 && 
+    else if($_FILES['image']['size'] < MAX_SIZE_UPLOADED_IMAGE && 
         ($_FILES['image']['type'] == 'image/png' || $_FILES['image']['type'] == 'image/jpeg') &&
         (exif_imagetype($_FILES['image']['tmp_name']) == IMAGETYPE_JPEG || exif_imagetype($_FILES['image']['tmp_name']) == IMAGETYPE_PNG)
     ) {
@@ -127,6 +129,11 @@ if($USER != false){
             ];
         }
         
+        echo json_encode((object)$ret);
+    }else{
+        $ret = [
+            'error'=>'Неподходящий файл'
+        ];
         echo json_encode((object)$ret);
     }
 }

@@ -9,4 +9,6 @@ define("DB_PASSWORD", "root");
 define('TIMEZONE_OFFSET', 10800);//Смещение часового пояса (10800 - Москва)
 define("VK_API_VERSION", "5.90");
 
+define('MAX_SIZE_UPLOADED_IMAGE', 10485760); // 10485760 байт - 10МБ
+
 ?>
