@@ -93,7 +93,7 @@ function checkCard($origin, $draft)
       if($isCorrect) $res['score'] = $origin['score'];
       else $res['score'] = 0;
       break;
-      case 'Orthoepy':
+    case 'Orthoepy':
         $res['word'];
         $arWord = preg_split('//u', $origin['word'], -1, PREG_SPLIT_NO_EMPTY);
         $glas = ['А', 'О', 'Э', 'Е', 'И', 'Ы', 'У', 'Ё', 'Ю', 'Я'];
@@ -125,6 +125,70 @@ function checkCard($origin, $draft)
   }
   return $res;
 }
+
+//Совмещает предыдущие события решения теста и новые. Возвращает объедененный массив событий решения
+function GetCombineEvents($main, $add){
+  $arr1 = []; $arr2 = [];
+  $arr1 = $main;
+  $arr2 = $add;
+
+  $lastTime = 0;
+  if( count($arr1) > 0 ){
+    $lastTime = $arr1[count($arr1)-1]['time'];
+  }
+  if(count($arr1) > 0){
+    for ($i=0; $i < count($arr2); $i++) { 
+      if($arr2[$i]['time'] > $lastTime){
+        $arr1[] = $arr2[$i];
+      }
+    }
+  }else{
+    $arr1 = $arr2;
+  }
+  return $arr1;
+}
+
+function GetNormalChronology($items){
+  $res = [];
+  $items[] = ['name'=>'end'];
+  $index = 0;
+  if($items[0]['name'] == 'load'){
+    $res[] = [
+      'name'=>'start',
+      'time' => $items[0]['time'], 
+    ];
+    $index++;
+  }
+  while ($index < count($items)) {
+
+    switch ($items[$index]['name']) {
+      case 'cardChange':
+        $res[] = $items[$index];
+        break;
+      case 'blur':
+        if($items[$index+1]['name'] == 'focus'){
+          $res[] = [
+            'name'=>'leavePage',
+            'time'=> $items[$index]['time'],
+            'timeEnd'=> $items[$index+1]['time'],
+          ];
+          $index++;
+        }
+        break;
+      case 'load':
+        $res[] = [
+          'name'=>'load',
+          'time' => $items[$index]['time'], 
+        ];
+        break;
+      default:
+        break;
+    }
+    $index++;
+  }
+  return $res;
+}
+
 
 //Перенос ответов с одних карточек в другие. Возвращает карточки с перенесенными ответами.
 function TransferAnswers($fromCards, $inCards){
@@ -337,7 +401,7 @@ function GTestResult($gt_id){//Получение/Создание решени�
       inner join tests on gtests.ref_test_id = tests.test_id 
       left join requests on (gtests.gr_id = requests.gr_id and requests.usr_id = :usr_id and requests.accepted = true) 
       left join images on images.img_id = tests.ico
-      where results.gr_id is not null and results.ref_test_id = :gt_id and results.ready = false");
+      where results.gr_id is not null and results.ref_test_id = :gt_id and results.ready = false and results.usr_id = :usr_id");
   $q->bindValue('gt_id', $gt_id, PDO::PARAM_INT);
   $q->bindValue('usr_id', $ME['usr_id'], PDO::PARAM_INT);
   $q->execute();
@@ -421,14 +485,17 @@ function save_gtest_result(){
 
   $newCards = $R['test']['body'];
   $res_id = $R['test']['res_id'];
-  $q = $DB->prepare("SELECT body from results where res_id = :res_id and usr_id = :usr_id limit 1");
+  $events = $R['events'];
+  $q = $DB->prepare("SELECT body, chronology from results where res_id = :res_id and usr_id = :usr_id limit 1");
   BindExecute($q, [['res_id', $res_id, PDO::PARAM_INT], ['usr_id', $ME['usr_id'], PDO::PARAM_INT]]);
   if($row = $q->fetch(PDO::FETCH_ASSOC)){
     $cards = json_decode($row['body'], true);
+    $newChronology = GetCombineEvents(json_decode($row['chronology'], true), $events);
     $sCards = TransferAnswers($newCards, $cards); //Перенос ответов
-    $q2 = $DB->prepare("UPDATE results set body = :body where res_id = :res_id and usr_id = :usr_id");
+    $q2 = $DB->prepare("UPDATE results set body = :body , chronology = :chronology where res_id = :res_id and usr_id = :usr_id");
     BindExecute($q2, [
-      ['body', json_encode( $sCards, JSON_UNESCAPED_UNICODE), PDO::PARAM_STR], 
+      ['body', json_encode( $sCards, JSON_UNESCAPED_UNICODE), PDO::PARAM_STR],
+      ['chronology', json_encode( $newChronology, JSON_UNESCAPED_UNICODE), PDO::PARAM_STR],
       ['res_id', $res_id, PDO::PARAM_INT], 
       ['usr_id', $ME['usr_id'], PDO::PARAM_INT]]);
     if(empty($q2->errorInfo()[1]) ){
@@ -571,8 +638,10 @@ function get_test_result()
     $qu->bindValue('usr_id', $row['usr_id'], PDO::PARAM_INT);
     $qu->execute();
     if($user = $qu->fetch(PDO::FETCH_ASSOC)){
-      $row['user'] = $user; 
+      $row['user'] = $user;  
     }
+    $row['chronology'] = json_decode($row['chronology'], true);
+    $row['chronology'] = GetNormalChronology($row['chronology']);
     $RET = ['data' => $row];
   } else {
     $RET = ['error' => 'Решение не найдено'];
@@ -782,7 +851,7 @@ function get_test_info(){
       $q = $DB->prepare("SELECT gtests.*, images.url \"ico_url\", results.res_id, requests.req_id, tests.name, tests.description, tests.ico, tests.usr_id,
       (Select count(*) from results where results.gr_id = gtests.gr_id and results.ref_test_id = gtests.gt_id and results.usr_id = :usr_id and results.ready = true) \"my_attempts\"
       from gtests inner join tests on gtests.ref_test_id = tests.test_id 
-      left join results on (results.ref_test_id = gtests.gt_id and results.ready = false)
+      left join results on (results.ref_test_id = gtests.gt_id and results.ready = false and results.usr_id = :usr_id)
       left join requests on (gtests.gr_id = requests.gr_id and requests.usr_id = :usr_id and requests.accepted = true) 
       left join images on images.img_id = tests.ico
       where gtests.gt_id = :gt_id limit 1");
