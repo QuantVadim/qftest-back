@@ -176,9 +176,11 @@ function GetNormalChronology($items){
         }
         break;
       case 'load':
+        $tm = isset($items[$index-1]['timeEnd']) ? $items[$index-1]['timeEnd'] : $items[$index-1]['time'];
         $res[] = [
           'name'=>'load',
-          'time' => $items[$index]['time'], 
+          'time' => $tm,
+          'timeEnd' => $items[$index]['time']
         ];
         break;
       default:
@@ -223,6 +225,7 @@ function test_send()
 {
   global $R, $DB, $ME, $RET;
   $test = $R['test'];
+  $events = $R['events'];
   $cards = $R['test']['body'];
   if(isset($test['test_id'])){
     $qt = $DB->prepare('SELECT * from tests where test_id = :test_id limit 1');
@@ -254,20 +257,29 @@ function test_send()
       }
     }
     if($isResult){
-      $curTime = date('Y-m-d H:i:s', time());
-      $qs = $DB->prepare("UPDATE results set score = :score, max_score = :max_score, body = :body, ready = :ready, time_end = :time_end where res_id = :res_id");
-      $qs->bindValue('score', $score, PDO::PARAM_INT);
-      $qs->bindValue('max_score', $max_score, PDO::PARAM_INT);
-      $qs->bindValue('body', json_encode($cards, JSON_UNESCAPED_UNICODE), PDO::PARAM_STR);
-      $qs->bindValue('ready', 1, PDO::PARAM_INT);
-      $qs->bindValue('time_end', $curTime, PDO::PARAM_STR);
-      $qs->bindValue('res_id', $test['res_id'], PDO::PARAM_INT);
-      $qs->execute();
-      if( empty($qs->errorInfo()[1]) ){
-        $RET = ['data' => $test['res_id']];
+      $gresult = $DB->prepare("SELECT chronology from results where res_id = :res_id limit 1");
+      $gresult->bindValue('res_id', $test['res_id'], PDO::PARAM_INT);
+      $gresult->execute();
+      if($gres = $gresult->fetch(PDO::FETCH_ASSOC)){
+        $newChronology = GetCombineEvents(json_decode($gres['chronology'], true), $events);
+        $curTime = date('Y-m-d H:i:s', time());
+        $qs = $DB->prepare("UPDATE results set score = :score, max_score = :max_score, body = :body, ready = :ready, time_end = :time_end, chronology = :chronology where res_id = :res_id");
+        $qs->bindValue('score', $score, PDO::PARAM_INT);
+        $qs->bindValue('max_score', $max_score, PDO::PARAM_INT);
+        $qs->bindValue('body', json_encode($cards, JSON_UNESCAPED_UNICODE), PDO::PARAM_STR);
+        $qs->bindValue('chronology',  json_encode( $newChronology, JSON_UNESCAPED_UNICODE), PDO::PARAM_STR);
+        $qs->bindValue('ready', 1, PDO::PARAM_INT);
+        $qs->bindValue('time_end', $curTime, PDO::PARAM_STR);
+        $qs->bindValue('res_id', $test['res_id'], PDO::PARAM_INT);
+        $qs->execute();
+        if( empty($qs->errorInfo()[1]) ){
+          $RET = ['data' => $test['res_id']];
+        }else{
+          $RET = ['error' => $qs->errorInfo()[2]];
+        }
       }else{
-        $RET = ['error' => $qs->errorInfo()[2]];
-      }
+        $RET = ['error' => 'Решение не найдено'];
+      } 
     }else{
       $qs = $DB->prepare("INSERT INTO results (name, description, usr_id_auditor, ref_test_id, usr_id, score, max_score, body, gr_id) 
         VALUES (:name, :description, :usr_id_auditor, :ref_test_id, :usr_id, :score, :max_score, :body, :gr_id)");
