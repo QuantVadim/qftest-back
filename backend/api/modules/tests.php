@@ -18,7 +18,8 @@ function GetExtractedCards($body){
   return $ret;
 }
 
-function GetCardNoAnswer($card)//Получение карточки вопроса без правильного ответа
+//Получение карточки вопроса без правильного ответа
+function GetCardNoAnswer($card)
 {
   $ret = $card;
   switch ($card['type']) {
@@ -40,8 +41,7 @@ function GetCardNoAnswer($card)//Получение карточки вопро�
 }
 
 //Проверка ответа
-function checkCard($origin, $draft)
-{
+function checkCard($origin, $draft){
   $res = $draft;
   switch ($origin['type']) {
     case 'Simple':
@@ -148,9 +148,11 @@ function GetCombineEvents($main, $add){
   return $arr1;
 }
 
+//Преобразует базовые события в массив хронологических событий
 function GetNormalChronology($items){
   $res = [];
   $items[] = ['name'=>'end'];
+  $states = [];
   $index = 0;
   if($items[0]['name'] == 'load'){
     $res[] = [
@@ -163,7 +165,17 @@ function GetNormalChronology($items){
 
     switch ($items[$index]['name']) {
       case 'cardChange':
-        $res[] = $items[$index];
+        if( isset( $states[strval($items[$index]['cardId']) ] ) ){
+          if($states[$items[$index]['cardId']] != $items[$index]){ //Проверка на отличие ответов с предыдущим состоянием карточки
+            $states[strval($items[$index]['cardId'])] = $items[$index];
+            $res[] = $items[$index];
+          }
+        }else{
+          $eve = $items[$index];
+          $states[strval($items[$index]['cardId'])] = $items[$index];
+          $eve['name'] = 'cardEnter';
+          $res[] = $eve;
+        }
         break;
       case 'blur':
         if($items[$index+1]['name'] == 'focus'){
@@ -189,6 +201,22 @@ function GetNormalChronology($items){
     $index++;
   }
   return $res;
+}
+
+//Проверяет на правильность ответы из хронологии и возвращает хронологию с проверенными карточками
+function GetCheckedChronology($origin, $chronologyEvents){
+  //$origin - массив карт теста, $chronology - массив базовых хронологических событий
+  $chronology = $chronologyEvents;
+  for ($i = 0; $i < count($chronology); $i++) {
+    for ($j = 0; $j < count($origin); $j++) {
+      if ( $chronology[$i]['name'] == 'cardChange' &&
+           $chronology[$i]['state']['id'] == $origin[$j]['id']
+      ) {
+        $chronology[$i]['state'] = checkCard($origin[$j], $chronology[$i]['state']);
+      }
+    }
+  }
+  return $chronology;
 }
 
 
@@ -221,8 +249,7 @@ function TransferAnswers($fromCards, $inCards){
   return $toCards;
 }
 
-function test_send()
-{
+function test_send(){
   global $R, $DB, $ME, $RET;
   $test = $R['test'];
   $events = $R['events'];
@@ -262,12 +289,13 @@ function test_send()
       $gresult->execute();
       if($gres = $gresult->fetch(PDO::FETCH_ASSOC)){
         $newChronology = GetCombineEvents(json_decode($gres['chronology'], true), $events);
+        $checkedChronology = GetCheckedChronology($originCards, $newChronology);
         $curTime = date('Y-m-d H:i:s', time());
         $qs = $DB->prepare("UPDATE results set score = :score, max_score = :max_score, body = :body, ready = :ready, time_end = :time_end, chronology = :chronology where res_id = :res_id");
         $qs->bindValue('score', $score, PDO::PARAM_INT);
         $qs->bindValue('max_score', $max_score, PDO::PARAM_INT);
         $qs->bindValue('body', json_encode($cards, JSON_UNESCAPED_UNICODE), PDO::PARAM_STR);
-        $qs->bindValue('chronology',  json_encode( $newChronology, JSON_UNESCAPED_UNICODE), PDO::PARAM_STR);
+        $qs->bindValue('chronology',  json_encode( $checkedChronology, JSON_UNESCAPED_UNICODE), PDO::PARAM_STR);
         $qs->bindValue('ready', 1, PDO::PARAM_INT);
         $qs->bindValue('time_end', $curTime, PDO::PARAM_STR);
         $qs->bindValue('res_id', $test['res_id'], PDO::PARAM_INT);
