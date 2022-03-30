@@ -472,6 +472,28 @@ function GTestResult($gt_id){//Получение/Создание решени�
       $q->bindValue('usr_id', $ME['usr_id'], PDO::PARAM_INT);
       $q->execute();
       if($row = $q->fetch(PDO::FETCH_ASSOC)){
+        $isSend = true;
+        if( isset($row['attempts']) && ($row['attempts'] - $row['my_attempts']) <=0 ){
+          $isSend = false;
+          $errorName = "NoAttempts";
+        }
+        //Проверка на доступность во временой период
+        $date_start = isset($row['date_start']) ? DateTime::createFromFormat('Y-m-d H:i:s', $row['date_start'])->getTimestamp() : false;
+        $date_end = isset($row['date_end']) ? DateTime::createFromFormat('Y-m-d H:i:s', $row['date_end'])->getTimestamp() : false;
+        $date_cur = time();
+        if($date_start && $date_cur < $date_start){
+          $isSend = false;
+          $errorName = "NotStarted";
+        }
+        if($date_end && $date_cur > $date_end){
+          $isSend = false;
+          $errorName = "Closed";
+        }
+        if($isSend == false){
+          return ['errorName'=>$errorName];
+        }
+        
+
         $cards = GenerateTestBody($row['body']);
         $qs = $DB->prepare("INSERT INTO results (name, description, usr_id_auditor, ref_test_id, usr_id, score, max_score, body, gr_id, time_end, ready) 
         VALUES (:name, :description, :usr_id_auditor, :ref_test_id, :usr_id, :score, :max_score, :body, :gr_id, :time_end, :ready)");
@@ -564,34 +586,22 @@ function get_test_basic(){
   }
   if ($row = $rrow ? $rrow : $q->fetch(PDO::FETCH_ASSOC)) {
     $isSend = false;
-    //Если пользователь является участником группы:
-    if ($row['req_id'] != '' || isset($test_id)){
-      $isSend = true;
-    //Если администратор группы:
+    if(isset($row['errorName'])){
+      $errorName = $row['errorName'];
     }else{
-      $q2 = $DB->prepare("SELECT usr_id from groups where gr_id = :gr_id limit 1");
-      $q2->bindValue("gr_id", $row['gr_id'], PDO::PARAM_INT);
-      $q2->execute();
-      if($rg = $q2->fetch(PDO::FETCH_ASSOC)){
-        if($rg['usr_id'] == $ME['usr_id'])
+      //Если пользователь является участником группы:
+      if ($row['req_id'] != '' || isset($test_id)){
         $isSend = true;
+      //Если администратор группы:
+      }else{
+        $q2 = $DB->prepare("SELECT usr_id from groups where gr_id = :gr_id limit 1");
+        $q2->bindValue("gr_id", $row['gr_id'], PDO::PARAM_INT);
+        $q2->execute();
+        if($rg = $q2->fetch(PDO::FETCH_ASSOC)){
+          if($rg['usr_id'] == $ME['usr_id'])
+          $isSend = true;
+        }
       }
-    }
-    if( isset($row['attempts']) && ($row['attempts'] - $row['my_attempts']) <=0 ){
-      $isSend = false;
-      $errorName = "NoAttempts";
-    }
-    //Проверка на доступность во временой период
-    $date_start = isset($row['date_start']) ? DateTime::createFromFormat('Y-m-d H:i:s', $row['date_start'])->getTimestamp() : false;
-    $date_end = isset($row['date_end']) ? DateTime::createFromFormat('Y-m-d H:i:s', $row['date_end'])->getTimestamp() : false;
-    $date_cur = time();
-    if($date_start && $date_cur < $date_start){
-      $isSend = false;
-      $errorName = "NotStarted";
-    }
-    if($date_end && $date_cur > $date_end){
-      $isSend = false;
-      $errorName = "Closed";
     }
 
     if($isSend){
@@ -627,7 +637,7 @@ function get_test_basic(){
       switch ($errorName) {
         case 'NoAttempts': $RET = ['error' => 'Нет попыток', 'info'=> $test_id]; break;
         case 'NotStarted' : $RET = ['error' => 'Тестирование еще не началось', 'info'=> $test_id]; break;
-        case 'Closed' : $RET = ['error' => 'Тестирование уже завершено', 'info'=> [$date_cur, $date_start, $date_end, $row['date_end']]]; break;
+        case 'Closed' : $RET = ['error' => 'Тестирование уже завершено' ]; break;
         default:
           $RET = ['error' => 'Тест не найден', 'info'=> $test_id];
           break;
