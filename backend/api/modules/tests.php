@@ -653,7 +653,12 @@ function get_test_result()
 {
   global $R, $DB, $ME, $RET;
   $res_id = $R['res_id'];
-  $q = $DB->prepare("SELECT results.*, images.url \"ico_url\" from results 
+  $q = $DB->prepare("SELECT results.*,
+    IF( (results.gr_id > 0), 
+    (SELECT images.url from gtests inner join tests `tst` on gtests.ref_test_id = tst.test_id 
+      left join images on images.img_id = tst.ico 
+      where results.ref_test_id = gtests.gt_id limit 1), images.url ) as \"ico_url\"
+    from results 
     left join tests on tests.test_id = results.ref_test_id
     left join images on images.img_id = tests.ico
     where results.res_id = :res_id limit 1");
