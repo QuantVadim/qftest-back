@@ -663,12 +663,18 @@ function get_test_result()
     $cards = json_decode($row['body'], true);
     $row['body'] = $cards;
     if($row['gr_id'] > 0 ){
-      $qg = $DB->prepare("SELECT groups.name as \"group_name\", groups.gr_id, groups.description,
+      $qg = $DB->prepare("SELECT groups.name as \"group_name\", groups.gr_id, groups.description, images.url as \"ico_url\", 
         users.first_name, users.last_name, users.avatar as \"user_avatar\" from groups
-        left join users on users.usr_id = groups.usr_id where gr_id = :gr_id limit 1");
+        left join users on users.usr_id = groups.usr_id 
+        left join images on images.img_id = groups.img_id
+        where gr_id = :gr_id limit 1");
       $qg->bindValue('gr_id', $row['gr_id'], PDO::PARAM_INT);
       $qg->execute();
       if($group = $qg->fetch(PDO::FETCH_ASSOC)){
+        if(strlen($group['ico_url']) > 0){
+          $group['ico_url'] = LINK.'/uploaded/'.$group['ico_url']; }else{
+          $group['ico_url'] = LINK.'/img/group_default.jpg'; 
+        }//
         $row['group'] = $group;
       }
     }else{
@@ -738,42 +744,39 @@ function get_my_tests()
 function get_my_results(){
   global $R, $DB, $ME, $RET;
 
-  $count = empty($R['count']) ? 20 : $R['count'];
-  $count = $count > 100 ? 100 : $count;
-  $sign = empty($R['desc']) ? '>' : '<';
-  $insertDesc = empty($R['desc']) ? '' : 'desc';
-
-  if (empty($R['point'])) {
-    $q = $DB->prepare("SELECT results.*, images.url \"ico_url\", users.first_name, users.last_name from results left join users on results.usr_id = users.usr_id 
-      left join tests on tests.test_id = results.ref_test_id
-      left join images on tests.ico = images.img_id
-      where results.usr_id = :usr_id
-      order by results.res_id $insertDesc limit :count");
-  } else {
-    $q = $DB->prepare("SELECT results.*, images.url \"ico_url\", users.first_name, users.last_name from results left join users on results.usr_id = users.usr_id 
-      left join tests on tests.test_id = results.ref_test_id 
-      left join images on tests.ico = images.img_id 
-      where results.usr_id = :usr_id and results.res_id $sign :point 
-      order by results.res_id $insertDesc limit :count");
-    $q->bindValue('point', $R['point'], PDO::PARAM_INT);
-  }
-  $q->bindValue('usr_id', $ME['usr_id'], PDO::PARAM_INT);
-  $q->bindValue('count', $count, PDO::PARAM_INT);
-  $q->execute();
-  if (empty($q->errorInfo()[1])) {
-    $rows = $q->fetchALL(PDO::FETCH_ASSOC);
-    for($i = 0; $i< count($rows); $i++){
-      $rows[$i]['date_created'] = NormalTime( $rows[$i]['date_created']);
-      //Установление изображения:
-      if(strlen($rows[$i]['ico_url']) > 0){
-        $rows[$i]['ico_url'] = LINK.'/uploaded/'.$rows[$i]['ico_url']; }else{
-        $rows[$i]['ico_url'] = LINK.'/img/test_default.jpg'; 
-      }//
+    $sql = "SELECT results.*, groups.name as \"group_name\", gimg.url as \"group_ico_url\", users.first_name, users.last_name, 
+    IF( (results.gr_id > 0), 
+    (SELECT images.url from gtests inner join tests `tst` on gtests.ref_test_id = tst.test_id 
+      left join images on images.img_id = tst.ico 
+      where results.ref_test_id = gtests.gt_id limit 1), images.url ) as \"ico_url\"
+    from results left join users on results.usr_id = users.usr_id 
+    left join tests on tests.test_id = results.ref_test_id
+    left join images on tests.ico = images.img_id
+    left join groups on results.gr_id = groups.gr_id 
+    left join images `gimg` on gimg.img_id = groups.img_id
+    where results.usr_id = :usr_id";
+  
+    $ls = GetAutoList($sql, 'results', 'res_id', [['usr_id', $ME['usr_id'], PDO::PARAM_INT]]);
+    if(isset($ls['data'])){
+      $rows = $ls['data'];
+      for($i = 0; $i< count($rows); $i++){
+        //Установление изображения:
+        if(strlen($rows[$i]['ico_url']) > 0){
+          $rows[$i]['ico_url'] = LINK.'/uploaded/'.$rows[$i]['ico_url']; }else{
+          $rows[$i]['ico_url'] = LINK.'/img/test_default.jpg'; 
+        }//
+        if(strlen($rows[$i]['group_ico_url']) > 0){
+          $rows[$i]['group_ico_url'] = LINK.'/uploaded/'.$rows[$i]['group_ico_url']; }else{
+          $rows[$i]['group_ico_url'] = LINK.'/img/group_default.jpg'; 
+        }//
+      }
+      $RET = ['data' => $rows];
+    }else{
+      $RET = ['error' => $ls['error']];
     }
-    $RET = ['data' => $rows];
-  } else {
-    $RET = ['error' => $q->errorInfo()[2]];
-  }
+   
+    
+
 }
 
 
@@ -912,12 +915,15 @@ function get_test_info(){
       if($row = $q->fetch(PDO::FETCH_ASSOC)){
         $row['ico_url'] = getImgURL($row['ico_url']);
       }
-      $qg = $DB->prepare("SELECT groups.name as \"group_name\", groups.gr_id, groups.description,
+      $qg = $DB->prepare("SELECT groups.name as \"group_name\", images.url \"ico_url\", groups.gr_id, groups.description,
           users.first_name, users.last_name, users.avatar as \"user_avatar\" from groups
-          left join users on users.usr_id = groups.usr_id where gr_id = :gr_id limit 1");
+          left join users on users.usr_id = groups.usr_id 
+          left join images on groups.img_id = images.img_id
+          where gr_id = :gr_id limit 1");
         $qg->bindValue('gr_id', $row['gr_id'], PDO::PARAM_INT);
         $qg->execute();
         if($group = $qg->fetch(PDO::FETCH_ASSOC)){
+          $group['ico_url'] = getImgURL($group['ico_url'], 'group');
           $row['group'] = $group;
         }
       $RET = ['data'=> $row, 'inf'=> $q->errorInfo()[1]];
