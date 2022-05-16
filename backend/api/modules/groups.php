@@ -67,11 +67,20 @@ function get_group_info()
 			$q2->bindValue("usr_id", $ME['usr_id'], PDO::PARAM_INT);
 			$q2->execute();
 			if ($ret2 = $q2->fetch(PDO::FETCH_ASSOC)) {
-				//Установление изображения:
+			//Установление изображения:
         if(strlen($ret2['ico_url']) > 0){
           $ret2['ico_url'] = LINK.'/uploaded/'.$ret2['ico_url']; }else{
           $ret2['ico_url'] = LINK.'/img/group_default.jpg'; 
         }//
+
+		if( isset($ret2['assessment']) && strlen($ret2['assessment']) > 0 ){
+			if($assess = json_decode($ret2['assessment'])){
+				$ret2['assessment'] = $assess;
+			}else{
+				$ret2['assessment'] = '';
+			}
+		}
+		
         $RET = ['data' => $ret2];
 			} else {
 				$RET = ['error' => 'Нет доступа'];
@@ -407,6 +416,16 @@ function get_group_results(){
 		$q->execute();
 		if (empty($q->errorInfo()[1])) {
 			$rows = $q->fetchALL(PDO::FETCH_ASSOC);
+			//START: Присвоение системы оценивания результатам:
+			$assessmentDefault = '';
+			$qas = $DB->prepare("SELECT assessment, (SELECT assessment from groups where gr_id = :gr_id limit 1) as \"assessment_default\" from gtests where gt_id = :gt_id limit 1");
+			BindExecute($qas, [['gr_id', $R['gr_id'], PDO::PARAM_INT], ['gt_id', $R['gt_id'], PDO::PARAM_INT]]);
+			if( $row_assess = $qas->fetch(PDO::FETCH_ASSOC)){
+				$assessmentDefault = (isset($row_assess['assessment']) && strlen($row_assess['assessment']) > 0 ) ? $row_assess['assessment'] : $row_assess['assessment_default'];
+			}
+			for ($i=0; $i < count($rows); $i++) { 
+				$rows[$i]['assessment'] = $assessmentDefault;
+			}//END: Присвоение системы оценивания результатам:
 			$RET = ['data' => $rows, 'info' => $R];
 		} else {
 			$RET = ['error' => $q->errorInfo()[2]];
@@ -429,7 +448,7 @@ function edit_gtest(){
 			$others[] = 'comment';
 			$oValues['comment'] = $R['comment'];
 		}
-		//Проверка на наличия параметров
+		//Проверка на наличие параметров
 		if(isset($sttg)){
 			if(isset($sttg['is_limit_attempts'])){
 				$others[] = 'attempts';
@@ -467,10 +486,21 @@ function edit_gtest(){
           }
         }
       }
+	  if(isset($sttg['assessment'])){
+        $others[] = 'assessment';
+        $oValues['assessment'] = NULL;
+        if(isset($sttg['assessment']) && is_array($sttg['assessment'])){
+			if($sttg['assessment']['name'] == 'default'){
+				$oValues['assessment'] = NULL;
+			}else{
+				$oValues['assessment'] = json_encode($sttg['assessment']);
+			}
+        }
+      }
 		}
 		//end
 		$insertSettings = ''; //comment = :comment, attempts = :attempts
-		for ($i=0; $i < count($others) ; $i++) { 
+		for ($i=0; $i < count($others) ; $i++) {
 			$insertSettings.=$others[$i].' = :'.$others[$i].($i < count($others)-1 ? ', ' : '');
 		}
 
@@ -497,6 +527,9 @@ function edit_gtest(){
         case 'duration_time': $qr->bindValue('duration_time', $oValues['duration_time'], 
             $oValues['duration_time'] == NULL ? PDO::PARAM_NULL : PDO::PARAM_INT);
           break;
+		case 'assessment': $qr->bindValue('assessment', $oValues['assessment'], 
+		  $oValues['assessment'] == NULL ? PDO::PARAM_NULL : PDO::PARAM_STR);
+		break;
 				default:
 					break;
 			}
@@ -766,5 +799,30 @@ function delete_group(){
 	}else{
 		$RET = ['error'=>'Группа не найдена'];
 	}
+}
 
+function group_set_assessment(){
+	global $R, $DB, $ME, $RET;
+	$gr_id = $R['gr_id'];
+	$q = $DB->prepare("SELECT gr_id, usr_id from groups where gr_id = :gr_id limit 1");
+	$q->bindValue('gr_id', $gr_id, PDO::PARAM_INT);
+	$q->execute();
+	if($group = $q->fetch(PDO::FETCH_ASSOC)){
+		if($group['usr_id'] == $ME['usr_id']){
+			$q2 = $DB->prepare("UPDATE groups set assessment = :assessment where gr_id = :gr_id");
+			BindExecute($q2, [
+				['assessment', $R['assessment'], PDO::PARAM_STR],
+				['gr_id', $gr_id, PDO::PARAM_INT]
+			]);
+			if(empty($q2->errorInfo()[1])){
+				$RET = ['data'=>$R['assessment']];
+			}else{
+				$RET = ['error'=>'Ошибка'];
+			}
+		}else{
+			$RET = ['error'=>'Недостаточно прав'];
+		}
+	}else{
+		$RET = ['error'=>'Группа не существует'];
+	}
 }

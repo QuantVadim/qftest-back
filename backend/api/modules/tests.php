@@ -751,13 +751,15 @@ function get_my_results(){
 
     $sql = "SELECT results.*, groups.name as \"group_name\", gimg.url as \"group_ico_url\", users.first_name, users.last_name, 
     IF( (results.gr_id > 0), 
-    (SELECT images.url from gtests inner join tests `tst` on gtests.ref_test_id = tst.test_id 
+    (SELECT images.url from gtests inner join tests `tst` on gtests.ref_test_id = tst.test_id
       left join images on images.img_id = tst.ico 
-      where results.ref_test_id = gtests.gt_id limit 1), images.url ) as \"ico_url\"
+      where results.ref_test_id = gtests.gt_id limit 1), images.url ) as \"ico_url\", 
+    gtests.assessment as \"assessment\", groups.assessment as \"assessment_default\"
     from results left join users on results.usr_id = users.usr_id 
     left join tests on tests.test_id = results.ref_test_id
     left join images on tests.ico = images.img_id
     left join groups on results.gr_id = groups.gr_id 
+    left join gtests on (gtests.gt_id = results.ref_test_id and gtests.gr_id is not null)
     left join images `gimg` on gimg.img_id = groups.img_id
     where results.usr_id = :usr_id";
   
@@ -765,6 +767,8 @@ function get_my_results(){
     if(isset($ls['data'])){
       $rows = $ls['data'];
       for($i = 0; $i< count($rows); $i++){
+        $rows[$i]['assessment'] = (isset($rows[$i]['assessment']) && strlen($rows[$i]['assessment']) > 0 ) ? $rows[$i]['assessment'] : $rows[$i]['assessment_default'];
+        unset($rows[$i]['assessment_default']);
         //Установление изображения:
         if(strlen($rows[$i]['ico_url']) > 0){
           $rows[$i]['ico_url'] = LINK.'/uploaded/'.$rows[$i]['ico_url']; }else{
@@ -779,8 +783,6 @@ function get_my_results(){
     }else{
       $RET = ['error' => $ls['error']];
     }
-   
-    
 
 }
 
@@ -847,6 +849,17 @@ function share_tests(){
           }
         }
       }
+      if(isset($sttg['assessment'])){
+        $others[] = 'assessment';
+        $oValues['assessment'] = NULL;
+        if(isset($sttg['assessment']) && is_array($sttg['assessment'])){
+			    if($sttg['assessment']['name'] == 'default'){
+				    $oValues['assessment'] = NULL;
+			    }else{
+				    $oValues['assessment'] = json_encode($sttg['assessment']);
+			    }
+        }
+      }
     }
     //end
     $insertSettings = ''; //, comment, attempts
@@ -885,6 +898,9 @@ function share_tests(){
         case 'duration_time': $qr->bindValue('duration_time', $oValues['duration_time'], 
             $oValues['duration_time'] == NULL ? PDO::PARAM_NULL : PDO::PARAM_INT);
           break;
+        case 'assessment': $qr->bindValue('assessment', $oValues['assessment'], 
+          $oValues['assessment'] == NULL ? PDO::PARAM_NULL : PDO::PARAM_STR);
+        break;
         default:
           break;
       }

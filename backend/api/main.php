@@ -41,6 +41,7 @@ include './helpers.php';
 include './modules/users.php';
 include './modules/tests.php';
 include './modules/groups.php';
+include './DataLib/data.php';
 
 $R = json_decode(file_get_contents('php://input'), true);
 $RET = ['error'=> 'Пусто']; //Ответ сервера
@@ -95,6 +96,7 @@ switch($R['q']){
     case 'set_group_info' : set_group_info(); break;
     case 'set_close_group' : set_close_group(); break;
     case 'delete_group' : delete_group(); break;
+    case 'group_set_assessment' : group_set_assessment(); break;
     default:
 
     break;
