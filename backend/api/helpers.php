@@ -24,7 +24,10 @@ function GetAutoList($query, $table, $column, $params = []) //[['name', 'Vadim',
   if (empty($R['point'])) {
     $q = $DB->prepare("$query order by $table.$column $insertDesc limit :count");
   } else {
-  	$insertWhere = strpos(mb_strtolower($query), 'where') ? 'and' : 'where';
+  	$insertWhere = strpos(mb_strtolower($query), 'where') ? ' and ' : ' where';
+    if(strpos(mb_strtolower($query), 'group by')){
+      $insertWhere = strpos(mb_strtolower($query), ' having') ? ' and ' : ' having';
+    }
     $q = $DB->prepare("$query $insertWhere $table.$column $sign :point 
       order by $table.$column $insertDesc limit :count");
     $q->bindValue('point', $R['point'], PDO::PARAM_INT);

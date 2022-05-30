@@ -61,17 +61,38 @@ function get_group_info()
 			$RET = ['data' => $ret];
 		} else {
 			$q2 = $DB->prepare("SELECT groups.* , images.url \"ico_url\", requests.req_id from groups inner join requests on requests.gr_id = groups.gr_id 
-        left join images on images.img_id = groups.img_id 
-				where requests.gr_id = :gr_id and requests.usr_id = :usr_id and requests.accepted = true limit 1 ");
+       			 	left join images on images.img_id = groups.img_id 
+					where requests.gr_id = :gr_id and requests.usr_id = :usr_id and requests.accepted = true limit 1 ");
 			$q2->bindValue("gr_id", $R['gr_id'], PDO::PARAM_INT);
 			$q2->bindValue("usr_id", $ME['usr_id'], PDO::PARAM_INT);
 			$q2->execute();
-			if ($ret2 = $q2->fetch(PDO::FETCH_ASSOC)) {
+		$ret2 = $q2->fetch(PDO::FETCH_ASSOC);
+		if(empty($ret2)){
+			$q2 = $DB->prepare("SELECT groups.* , images.url \"ico_url\" from memberships 
+				inner join groups_default on (groups_default.com_id = memberships.com_id and memberships.usr_id = :usr_id and groups_default.gr_id = :gr_id) 
+				left join groups on groups.gr_id = groups_default.gr_id 
+				left join images on images.img_id = groups.img_id 
+				where memberships.usr_id = :usr_id and groups_default.gr_id = :gr_id limit 1 ");
+			$q2->bindValue("gr_id", $R['gr_id'], PDO::PARAM_INT);
+			$q2->bindValue("usr_id", $ME['usr_id'], PDO::PARAM_INT);
+			$q2->execute();
+			$ret2 = $q2->fetch(PDO::FETCH_ASSOC);
+			if($ret2){
+				$qi = $DB->prepare("INSERT into requests (usr_id, gr_id, name, accepted) VALUES(:usr_id, :gr_id, :name, :accepted)");
+				$qi->bindValue("name", $ME['last_name'] . ' ' . $ME['first_name'], PDO::PARAM_STR);
+				$qi->bindValue("usr_id", $ME['usr_id'], PDO::PARAM_INT);
+				$qi->bindValue("gr_id", $R['gr_id'], PDO::PARAM_INT);
+				$qi->bindValue("accepted", true, PDO::PARAM_BOOL);
+				$qi->execute();
+			}
+		}
+
+		if ($ret2) {
 			//Установление изображения:
-        if(strlen($ret2['ico_url']) > 0){
-          $ret2['ico_url'] = LINK.'/uploaded/'.$ret2['ico_url']; }else{
-          $ret2['ico_url'] = LINK.'/img/group_default.jpg'; 
-        }//
+        	if(strlen($ret2['ico_url']) > 0){
+          		$ret2['ico_url'] = LINK.'/uploaded/'.$ret2['ico_url']; }else{
+          		$ret2['ico_url'] = LINK.'/img/group_default.jpg'; 
+        	}//
 
 		if( isset($ret2['assessment']) && strlen($ret2['assessment']) > 0 ){
 			if($assess = json_decode($ret2['assessment'])){
@@ -82,9 +103,9 @@ function get_group_info()
 		}
 		
         $RET = ['data' => $ret2];
-			} else {
-				$RET = ['error' => 'Нет доступа'];
-			}
+		} else {
+			$RET = ['error' => 'Нет доступа', 'ret'=>$q2->errorInfo()[2]];
+		}
 		}
 	} else {
 		$RET = ['error' => 'Ошибка'];
@@ -165,28 +186,19 @@ function get_group_users()
 	$count = $count > 100 ? 100 : $count;
 	$sign = $R['desc'] == true ? '<' : '>';
 	$insertDesc = $R['desc'] == true ? 'desc' : '';
-	if (isset($R['point'])) {
-		$q = $DB->prepare("SELECT $table_name.*, users.first_name, users.last_name, users.usr_id, users.avatar
-			from $table_name left join users on $table_name.usr_id = users.usr_id 
-			where $table_name.gr_id = :gr_id and $table_name.accepted = :accepted 
-			and $table_name.req_id $sign :point order by $table_name.req_id $insertDesc limit :count");
-		$q->bindValue('point', $R['point'], PDO::PARAM_INT);
-	} else {
-		$q = $DB->prepare("SELECT $table_name.*, users.first_name, users.last_name, users.usr_id, users.avatar
-			from $table_name left join users on $table_name.usr_id = users.usr_id 
-			where $table_name.gr_id = :gr_id and $table_name.accepted = :accepted
-			order by $table_name.req_id $insertDesc limit :count");
+
+	if(isset($R['accepted'])){
+		$RET = GetAutoList("SELECT requests.req_id as \"req_id\", requests.accepted as \"accepted\", requests.name as \"name\", requests.gr_id as \"gr_id\", users.first_name, users.last_name, users.usr_id, users.avatar
+		from requests left join users on requests.usr_id = users.usr_id 
+		where requests.gr_id = :gr_id and requests.accepted = :accepted", 'requests', 'req_id',
+			[
+				['gr_id', $R['gr_id'], PDO::PARAM_INT],
+				['accepted', $R['accepted'], PDO::PARAM_BOOL]
+			]);
+	}else{
+		$RET = ['error'=>'Ошибка'];
 	}
-	$q->bindValue('gr_id', $R['gr_id'], PDO::PARAM_INT);
-	$q->bindValue('accepted', $R['accepted'], PDO::PARAM_BOOL);
-	$q->bindValue('count', $count, PDO::PARAM_INT);
-	$q->execute();
-	if (empty($q->errorInfo()[1])) {
-		$rows = $q->fetchALL(PDO::FETCH_ASSOC);
-		$RET = ['data' => $rows, 'info' => $R];
-	} else {
-		$RET = ['error' => $q->errorInfo()[2]];
-	}
+	
 }
 
 
@@ -268,50 +280,23 @@ function join_request_action()
 
 
 //Получение списка групп
-function get_my_groups()
-{
+function get_my_groups(){
 	global $R, $DB, $ME, $RET;
-
-	$count = empty($R['count']) ? 20 : $R['count'];
-	$count = $count > 100 ? 100 : $count;
-	$sign = empty($R['desc']) ? '>' : '<';
-	$insertDesc = empty($R['desc']) ? '' : 'desc';
-
-	//Мои групы
+	$list = [];
+	//Под моим управлением:
 	if ($R['type'] == 'my') {
-		if (empty($R['point'])) {
-			$q = $DB->prepare("SELECT groups.*, images.url \"ico_url\", users.first_name, users.last_name from groups left join users on groups.usr_id = users.usr_id 
-        left join images on groups.img_id = images.img_id 
-        where groups.usr_id = :usr_id
-				order by groups.gr_id $insertDesc limit :count");
-		} else {
-			$q = $DB->prepare("SELECT groups.*, images.url \"ico_url\", users.first_name, users.last_name from groups left join users on groups.usr_id = users.usr_id 
-        left join images on groups.img_id = images.img_id 
-        where groups.usr_id = :usr_id and groups.gr_id $sign :point 
-				order by groups.gr_id $insertDesc limit :count");
-			$q->bindValue('point', $R['point'], PDO::PARAM_INT);
-		}
-		//Под моим управлением
+		$list = GetAutoList("SELECT groups.*, images.url \"ico_url\", users.first_name, users.last_name from groups left join users on groups.usr_id = users.usr_id 
+        	left join images on groups.img_id = images.img_id 
+        	where groups.usr_id = :usr_id", 'groups', 'gr_id');
+	//В составе:
 	} else {
-		if (empty($R['point'])) {
-			$q = $DB->prepare("SELECT groups.*, images.url \"ico_url\", users.first_name, users.last_name from groups left join users on groups.usr_id = users.usr_id inner join requests on requests.gr_id = groups.gr_id 
-        left join images on groups.img_id = images.img_id 
-        where requests.usr_id = :usr_id
-				order by requests.req_id $insertDesc limit :count");
-		} else {
-			$q = $DB->prepare("SELECT groups.*, images.url \"ico_url\", users.first_name, users.last_name from groups left join users on groups.usr_id = users.usr_id inner join requests on requests.gr_id = groups.gr_id 
-        left join images on groups.img_id = images.img_id 
-        where requests.usr_id = :usr_id and requests.req_id $sign :point 
-				order by requests.req_id $insertDesc limit :count");
-			$q->bindValue('point', $R['point'], PDO::PARAM_INT);
-		}
+		$list = GetAutoList("SELECT groups.*, images.url \"ico_url\", users.first_name, users.last_name from groups left join users on groups.usr_id = users.usr_id inner join requests on requests.gr_id = groups.gr_id 
+        	left join images on groups.img_id = images.img_id 
+        	where requests.usr_id = :usr_id", 'groups', 'gr_id');	
 	}
 
-	$q->bindValue('usr_id', $ME['usr_id'], PDO::PARAM_INT);
-	$q->bindValue('count', $count, PDO::PARAM_INT);
-	$q->execute();
-	if (empty($q->errorInfo()[1])) {
-		$rows = $q->fetchALL(PDO::FETCH_ASSOC);
+	if ( isset($list['data']) ){
+		$rows = $list['data'];
     for ($i=0; $i < count($rows); $i++) { 
       //Установление изображения:
       if(strlen($rows[$i]['ico_url']) > 0){
@@ -321,7 +306,35 @@ function get_my_groups()
     }
     $RET = ['data' => $rows];
 	} else {
-		$RET = ['error' => $q->errorInfo()[2]];
+		$RET = ['error' => $list];//$q->errorInfo()[2]];
+	}
+}
+
+//Получение списка групп по-умолчанию
+function get_my_groups_default(){
+	global $R, $DB, $ME, $RET;
+	$list = [];
+	$list = GetAutoList("SELECT DISTINCT groups.*, images.url \"ico_url\", users.first_name, users.last_name from memberships 
+		inner join groups_default on groups_default.com_id = memberships.com_id 
+		inner join groups on groups.gr_id = groups_default.gr_id 
+		left join users on groups.usr_id = users.usr_id 
+		left join images on groups.img_id = images.img_id 
+		where memberships.usr_id = :usr_id 
+		and groups.gr_id not in (SELECT requests.gr_id from requests where requests.usr_id = :usr_id and requests.gr_id = groups.gr_id and requests.accepted = 1) 
+		", 'memberships', 'mem_id');
+		
+	if ( isset($list['data']) ){
+		$rows = $list['data'];
+    for ($i=0; $i < count($rows); $i++) { 
+      //Установление изображения:
+      if(strlen($rows[$i]['ico_url']) > 0){
+        $rows[$i]['ico_url'] = LINK.'/uploaded/'.$rows[$i]['ico_url']; }else{
+        $rows[$i]['ico_url'] = LINK.'/img/group_default.jpg'; 
+      }//
+    }
+    $RET = ['data' => $rows];
+	} else {
+		$RET = ['error' => $list];//$q->errorInfo()[2]];
 	}
 }
 

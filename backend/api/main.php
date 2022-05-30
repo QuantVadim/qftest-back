@@ -76,6 +76,7 @@ switch($R['q']){
     case 'get_my_tests': get_my_tests(); break;
     case 'get_my_results': get_my_results(); break;
     case 'get_my_groups': get_my_groups(); break;
+    case 'get_my_groups_default': get_my_groups_default(); break;
     case 'create_group': create_group(); break;
     case 'get_group_info': get_group_info(); break;
     case 'switch_joining_grop': switch_joining_grop(); break;
@@ -122,6 +123,7 @@ if($ME['user_type'] == 'admin'){
         case 'adm_community_delete': adm_community_delete(); break;
 
         case 'adm_get_groups': adm_get_groups(); break;
+        
         
         default: break;
     }
