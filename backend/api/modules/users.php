@@ -3,11 +3,12 @@
 function login(){
     global $R, $DB, $ME, $RET;
     
-    $q = $DB->prepare("SELECT usr_id, first_name, last_name, avatar, mykey FROM users where usr_id = :usr_id limit 1");
+    $q = $DB->prepare("SELECT usr_id, first_name, last_name, avatar, mykey, user_type FROM users where usr_id = :usr_id limit 1");
     $q->bindValue('usr_id', $R['data']['usr_id'], PDO::PARAM_INT);
     $q->execute();
     if($row = $q->fetch(PDO::FETCH_ASSOC)){
         if($row['mykey'] == $R['data']['mykey']){
+            $row['user_type'] = empty($row['user_type']) ? 'default' : $row['user_type'];
             $RET = ['data' => $row ];
         }else{  
             $RET = ['error' => 'Ошибка авторизации'];
@@ -21,10 +22,11 @@ function login(){
 function get_user(){
     global $R, $DB, $ME, $RET;
     
-    $q = $DB->prepare("SELECT usr_id, first_name, last_name, avatar FROM users where usr_id = :usr_id limit 1");
+    $q = $DB->prepare("SELECT usr_id, first_name, last_name, avatar, user_type FROM users where usr_id = :usr_id limit 1");
     $q->bindValue('usr_id', $R['data']['usr_id'], PDO::PARAM_INT);
     $q->execute();
     if($row = $q->fetch(PDO::FETCH_ASSOC)){
+        $row['user_type'] = empty($row['user_type']) ? 'default' : $row['user_type'];
         $RET = ['data' => $row ];
     }else{
         $RET = ['error' => 'Пользователь не найден'];

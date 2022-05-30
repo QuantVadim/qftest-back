@@ -41,6 +41,7 @@ include './helpers.php';
 include './modules/users.php';
 include './modules/tests.php';
 include './modules/groups.php';
+include './modules/admin.php';
 include './DataLib/data.php';
 
 $R = json_decode(file_get_contents('php://input'), true);
@@ -48,10 +49,11 @@ $RET = ['error'=> 'Пусто']; //Ответ сервера
 $ME = $R['me'] ? $R['me'] : false; //Пользователь
 
 if($R['q'] != 'login'){
-    $qusr = $DB->prepare("SELECT usr_id, mykey from users where usr_id = :usr_id limit 1");
+    $qusr = $DB->prepare("SELECT usr_id, mykey, user_type from users where usr_id = :usr_id limit 1");
 $qusr->bindValue('usr_id', $ME['usr_id'], PDO::PARAM_INT);
 $qusr->execute();
 if($rowusr = $qusr->fetch(PDO::FETCH_ASSOC)){
+    $ME['user_type'] = $rowusr['user_type'];
     if($ME['mykey'] != $rowusr['mykey']){
         echo json_encode($RET);
         exit;
@@ -100,7 +102,30 @@ switch($R['q']){
     default:
 
     break;
-    
+}
+
+if($ME['user_type'] == 'admin'){
+    switch($R['q']){
+        case 'adm_get_users': adm_get_users(); break;
+        case 'adm_get_user': adm_get_user();break;
+        case 'adm_user_save': adm_user_save(); break;
+        case 'adm_user_delete': adm_user_delete(); break;
+
+        case 'adm_get_def_users': adm_get_def_users(); break;
+        case 'adm_get_def_user': adm_get_def_user();break;
+        case 'adm_def_user_save': adm_def_user_save(); break;
+        case 'adm_def_user_delete': adm_def_user_delete(); break;
+
+        case 'adm_get_communities': adm_get_communities(); break;
+        case 'adm_get_community': adm_get_community();break;
+        case 'adm_community_save': adm_community_save(); break;
+        case 'adm_community_delete': adm_community_delete(); break;
+
+        case 'adm_get_groups': adm_get_groups(); break;
+        
+        default: break;
+    }
+
 }
 
 

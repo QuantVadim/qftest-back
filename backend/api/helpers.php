@@ -29,7 +29,7 @@ function GetAutoList($query, $table, $column, $params = []) //[['name', 'Vadim',
       order by $table.$column $insertDesc limit :count");
     $q->bindValue('point', $R['point'], PDO::PARAM_INT);
   }
-  $q->bindValue('usr_id', $ME['usr_id'], PDO::PARAM_INT);
+  if( strpos($query, ':usr_id') ) $q->bindValue('usr_id', $ME['usr_id'], PDO::PARAM_INT);
   $q->bindValue('count', $count, PDO::PARAM_INT);
   if(count($params) > 0){
   	foreach ($params as $key => $param) {
@@ -66,6 +66,61 @@ function getImgURL($path, $default_name = 'test'){
       	$ret = LINK.'/img/'.$default_name.'_default.jpg'; 
     }//
     return $ret;
+}
+
+
+//Установка значений для табличной части
+function ChangeTablePart($tbConections, $tbItem, $itmColumnId, $mainColumn, $mainColumnValue, $items ){
+  global $R, $DB, $ME, $RET;
+  //$tbConections - таблица связей, $tbItem - таблица записи, $itmColumnId - id таблицы записи, $mainColumn - название главного столбца, $mainColumnValue - значение главного столюца
+
+    $qall = $DB->prepare("SELECT $tbConections.* from $tbConections 
+        left join $tbItem on $tbConections.$itmColumnId = $tbItem.$itmColumnId where $tbConections.$mainColumn = :$mainColumn");
+    $qall->bindValue($mainColumn, $mainColumnValue, PDO::PARAM_INT);
+    $qall->execute();
+    $mems = $qall->fetchAll(PDO::FETCH_ASSOC);
+    $itemsDelete = []; //Список записей на удаление
+    $itemsAdd = [];//Список записей на добавление
+    for ($i=0; $i < count($mems); $i++) {//На удаление:
+        $isContain = false;
+        for ($j=0; $j < count($items) ; $j++) { 
+            if($mems[$i][$itmColumnId] == $items[$j][$itmColumnId]){
+                $isContain = true;
+                break;
+            }
+        }
+        if($isContain == false){ $itemsDelete[] = $mems[$i][$itmColumnId];}
+    }
+    for ($i=0; $i < count($items); $i++) {//На добавление:
+        $isContain = false;
+        for ($j=0; $j < count($mems) ; $j++) { 
+            if($mems[$j][$itmColumnId] == $items[$i][$itmColumnId]){
+                $isContain = true;
+                break;
+            }
+        }
+        if($isContain == false){ $itemsAdd[] = $items[$i][$itmColumnId];}
+    }
+    $templates = [];
+    for ($i=0; $i <count($itemsAdd) ; $i++) {//Создание шаблона для добавления записей
+        $templates[] = "(:val1, :val2_$i)";
+    }
+    $lineDelete = implode(', ', $itemsDelete);
+    $lineAdd =  implode(', ', $templates);
+    if(count($itemsDelete) > 0){
+        $qD = $DB->prepare("DELETE from $tbConections where $mainColumn = :$mainColumn and $itmColumnId in ($lineDelete)");
+        $qD->bindValue($mainColumn, $mainColumnValue, PDO::PARAM_INT);
+        $qD->execute();
+    }
+    if(count($itemsAdd) > 0){
+        $qA = $DB->prepare("INSERT INTO $tbConections ($mainColumn, $itmColumnId) VALUES $lineAdd");
+        $qA->bindValue('val1', $mainColumnValue, PDO::PARAM_INT);
+        for($i=0; $i < count($itemsAdd); $i++) {
+            $qA->bindValue('val2_'.$i, $itemsAdd[$i], PDO::PARAM_INT);
+        }
+        $qA->execute();
+    }
+
 }
 
 
