@@ -1,7 +1,7 @@
 <?php
 
 define('PROTOCOL', 'http');
-define('LINK', PROTOCOL.'://t.myqf.ru');
+define('LINK', PROTOCOL.'://test-s1.ru');
 define("DB_NAME", "rutest");
 define("DB_USER", "root");
 define("DB_PASSWORD", "root");

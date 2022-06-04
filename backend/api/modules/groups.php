@@ -285,9 +285,16 @@ function get_my_groups(){
 	$list = [];
 	//Под моим управлением:
 	if ($R['type'] == 'my') {
-		$list = GetAutoList("SELECT groups.*, images.url \"ico_url\", users.first_name, users.last_name from groups left join users on groups.usr_id = users.usr_id 
+		if($R['com_id']){
+			$list = GetAutoList("SELECT groups.*, images.url \"ico_url\", users.first_name, users.last_name from groups left join users on groups.usr_id = users.usr_id 
+        	left join images on groups.img_id = images.img_id 
+			inner join groups_default on groups_default.gr_id = groups.gr_id 
+        	where groups.usr_id = :usr_id and groups_default.com_id = :com_id ", 'groups', 'gr_id', [['com_id', $R['com_id'], PDO::PARAM_INT]]);
+		}else{
+			$list = GetAutoList("SELECT groups.*, images.url \"ico_url\", users.first_name, users.last_name from groups left join users on groups.usr_id = users.usr_id 
         	left join images on groups.img_id = images.img_id 
         	where groups.usr_id = :usr_id", 'groups', 'gr_id');
+		}
 	//В составе:
 	} else {
 		$list = GetAutoList("SELECT groups.*, images.url \"ico_url\", users.first_name, users.last_name from groups left join users on groups.usr_id = users.usr_id inner join requests on requests.gr_id = groups.gr_id 
@@ -403,32 +410,36 @@ function get_group_results(){
 
 	if ( $isAccess ) {
 		$insUser = $isAccess == 1 ? 'and requests.usr_id = :usr_id' : '';
-		if (isset($R['point'])) {
-			$q = $DB->prepare("SELECT $table_name.res_id, $table_name.ready, $table_name.time_end, $table_name.score, $table_name.max_score, $table_name.date_created, $table_name.usr_id,
-			requests.name as \"user_name\", users.first_name, users.last_name, users.avatar, $table_name.ref_test_id
-			from $table_name left join users on $table_name.usr_id = users.usr_id
+
+		if(isset($R['com_id'])){
+			$list = GetAutoList("SELECT results.res_id, results.ready, results.time_end, results.score, results.max_score, results.date_created, results.usr_id,
+			requests.name as \"user_name\", users.first_name, users.last_name, users.avatar, results.ref_test_id
+			from results 
+			left join users on results.usr_id = users.usr_id
+			inner join memberships on (memberships.usr_id = users.usr_id and memberships.com_id = :com_id) 
 			left join requests on (requests.usr_id = users.usr_id and requests.gr_id = :gr_id )
-			where $table_name.gr_id = :gr_id and $table_name.ref_test_id = :gt_id
-			and $table_name.res_id $sign :point
-			$insUser
-			order by $table_name.res_id $insertDesc limit :count");
-			$q->bindValue('point', $R['point'], PDO::PARAM_INT);
-		} else {
-			$q = $DB->prepare("SELECT $table_name.res_id, $table_name.ready, $table_name.time_end, $table_name.score, $table_name.max_score, $table_name.date_created, $table_name.usr_id,
-			requests.name as \"user_name\", users.first_name, users.last_name, users.avatar, $table_name.ref_test_id
-			from $table_name left join users on $table_name.usr_id = users.usr_id
+			where results.gr_id = :gr_id and results.ref_test_id = :gt_id $insUser", "results", 'res_id',
+			[
+				['gt_id', $R['gt_id'], PDO::PARAM_INT],
+				['gr_id', $R['gr_id'], PDO::PARAM_INT],
+				['com_id', $R['com_id'], PDO::PARAM_INT]
+			]);
+		}else{
+			$list = GetAutoList("SELECT results.res_id, results.ready, results.time_end, results.score, results.max_score, results.date_created, results.usr_id,
+			requests.name as \"user_name\", users.first_name, users.last_name, users.avatar, results.ref_test_id
+			from results left join users on results.usr_id = users.usr_id
 			left join requests on (requests.usr_id = users.usr_id and requests.gr_id = :gr_id )
-			where $table_name.gr_id = :gr_id and $table_name.ref_test_id = :gt_id
-			$insUser
-			order by $table_name.res_id $insertDesc limit :count");
+			where results.gr_id = :gr_id and results.ref_test_id = :gt_id $insUser", "results", 'res_id',
+			[
+				['gt_id', $R['gt_id'], PDO::PARAM_INT],
+				['gr_id', $R['gr_id'], PDO::PARAM_INT]
+			]);
 		}
-		if($isAccess == 1)  $q->bindValue('usr_id', $ME['usr_id'], PDO::PARAM_INT);
-		$q->bindValue('gt_id', $R['gt_id'], PDO::PARAM_INT);
-		$q->bindValue('gr_id', $R['gr_id'], PDO::PARAM_INT);
-		$q->bindValue('count', $count, PDO::PARAM_INT);
-		$q->execute();
-		if (empty($q->errorInfo()[1])) {
-			$rows = $q->fetchALL(PDO::FETCH_ASSOC);
+		
+		
+
+		if ( empty($list['error']) ){
+			$rows = $list['data'];
 			//START: Присвоение системы оценивания результатам:
 			$assessmentDefault = '';
 			$qas = $DB->prepare("SELECT assessment, (SELECT assessment from groups where gr_id = :gr_id limit 1) as \"assessment_default\" from gtests where gt_id = :gt_id limit 1");
@@ -441,7 +452,7 @@ function get_group_results(){
 			}//END: Присвоение системы оценивания результатам:
 			$RET = ['data' => $rows, 'info' => $R];
 		} else {
-			$RET = ['error' => $q->errorInfo()[2]];
+			$RET = ['error' => null];//$q->errorInfo()[2]];
 		}
 	}else{
 		$RET = ['error' => 'Нет доступа'];
@@ -634,45 +645,37 @@ function delete_gtest(){
 function get_all_groups_tests()
 {
 	global $R, $DB, $ME, $RET;
-	$table_name = "gtests";
-
-	$count = isset($R['count']) ? $R['count'] : 30;
-	$count = $count > 100 ? 100 : $count;
-	$sign = $R['desc'] == true ? '<' : '>';
-	$insertDesc = $R['desc'] == true ? 'desc' : '';
-
-	if (isset($R['point'])) {
-		$q = $DB->prepare("SELECT $table_name.*, images.url \"test_ico_url\", images_gr.url \"group_ico_url\", tests.name, tests.description
-			from $table_name left join tests on $table_name.ref_test_id = tests.test_id 
-			inner join requests on (requests.gr_id = gtests.gr_id)
-			left join images on tests.ico = images.img_id 
-      left join images images_gr on groups.img_id = images_gr.img_id 
-      inner join groups on (groups.gr_id = $table_name.gr_id)
-			where requests.usr_id = :usr_id
-			and groups.closed = false
-			and $table_name.gt_id $sign :point
-			order by $table_name.gt_id $insertDesc limit :count");
-		$q->bindValue('point', $R['point'], PDO::PARAM_INT);
-	} else {
-		$q = $DB->prepare("SELECT $table_name.*, images.url \"test_ico_url\", images_gr.url \"group_ico_url\", tests.name, tests.description,
-			users.avatar, groups.name as \"group_name\"
-			from $table_name left join tests on $table_name.ref_test_id = tests.test_id 
-			inner join requests on (requests.gr_id = gtests.gr_id)
-			inner join groups on (groups.gr_id = $table_name.gr_id)
-			left join users on (groups.usr_id = users.usr_id)
-			left join images on tests.ico = images.img_id 
-      left join images images_gr on groups.img_id = images_gr.img_id 
-			where requests.usr_id = :usr_id
-			and groups.closed = false
-			order by $table_name.gt_id $insertDesc limit :count");
+	$list = ['error' => 'Ошибка'];
+	if($ME['user_type'] == 'admin' || $ME['user_type'] == 'mentor' ){
+		$list = GetAutoList("SELECT gtests.*, images.url \"test_ico_url\", images_gr.url \"group_ico_url\", tests.name, tests.description,
+		users.avatar, groups.name as \"group_name\"
+		from gtests left join tests on gtests.ref_test_id = tests.test_id 
+		inner join groups on (groups.gr_id = gtests.gr_id)
+		left join users on (groups.usr_id = users.usr_id)
+		left join images on tests.ico = images.img_id 
+		left join images images_gr on groups.img_id = images_gr.img_id 
+		where groups.usr_id = :usr_id
+		and groups.closed = false", 'gtests', 'gr_id');
+	}else{
+		$list = GetAutoList("SELECT gtests.*, images.url \"test_ico_url\", images_gr.url \"group_ico_url\", tests.name, tests.description,
+		users.avatar, groups.name as \"group_name\"
+		from gtests left join tests on gtests.ref_test_id = tests.test_id 
+		inner join requests on (requests.gr_id = gtests.gr_id)
+		inner join groups on (groups.gr_id = gtests.gr_id)
+		left join users on (groups.usr_id = users.usr_id)
+		left join images on tests.ico = images.img_id 
+		left join images images_gr on groups.img_id = images_gr.img_id 
+		where requests.usr_id = :usr_id
+		and groups.closed = false", 'gtests', 'gr_id');
 	}
-	$q->bindValue('usr_id', $ME['usr_id'], PDO::PARAM_INT);
-	$q->bindValue('count', $count, PDO::PARAM_INT);
-	$q->execute();
-	if (empty($q->errorInfo()[1])) {
-		$rows = $q->fetchALL(PDO::FETCH_ASSOC);
+
+	
+
+
+	if (isset($list['data'])){//empty($q->errorInfo()[1])) {
+		$rows = $list['data']; //$q->fetchALL(PDO::FETCH_ASSOC);
 		for ($i = 0; $i < count($rows); $i++) {
-			$rows[$i]['date_created'] = NormalTime($rows[$i]['date_created']);
+			//$rows[$i]['date_created'] = NormalTime($rows[$i]['date_created']);
 			//Установление иконки теста
 			if(strlen($rows[$i]['test_ico_url']) > 0){
 				$rows[$i]['test_ico_url'] = LINK.'/uploaded/'.$rows[$i]['test_ico_url']; }else{
@@ -686,7 +689,7 @@ function get_all_groups_tests()
 		}
 		$RET = ['data' => $rows];
 	} else {
-		$RET = ['error' => $q->errorInfo()[2]];
+		$RET = ['error' => $list['error']];//$q->errorInfo()[2]];
 	}
 }
 
@@ -838,4 +841,34 @@ function group_set_assessment(){
 	}else{
 		$RET = ['error'=>'Группа не существует'];
 	}
+}
+
+
+function get_classes_groups(){
+	global $R, $DB, $ME, $RET;
+
+	if(isset($R['gr_id'])){
+		$q = $DB->prepare("SELECT communities.*, groups.gr_id from communities 
+		left join groups_default on groups_default.com_id = communities.com_id 
+		left join groups on (groups.gr_id =  groups_default.gr_id)  
+		where groups.usr_id = :usr_id and groups.gr_id = :gr_id group by communities.com_id order by communities.name ");
+		$q->bindValue('gr_id', $R['gr_id'], PDO::PARAM_INT);
+	}else{
+		$q = $DB->prepare("SELECT communities.* from communities 
+		left join groups_default on groups_default.com_id = communities.com_id 
+		left join groups on groups.gr_id =  groups_default.gr_id  
+		where groups.usr_id = :usr_id group by communities.com_id order by communities.name ");
+	}
+	
+	$q->bindValue('usr_id', $ME['usr_id'], PDO::PARAM_INT);
+	$q->execute();
+	
+	if(empty($q->errorInfo()[1])){
+		$rows = $q->fetchAll(PDO::FETCH_ASSOC);
+		$RET = ['data'=>$rows, 'me'=>$ME];
+	}else{
+		$RET = ['error'=>'Ошибка запроса'];
+	}
+
+
 }

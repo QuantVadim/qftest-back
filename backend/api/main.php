@@ -100,6 +100,8 @@ switch($R['q']){
     case 'set_close_group' : set_close_group(); break;
     case 'delete_group' : delete_group(); break;
     case 'group_set_assessment' : group_set_assessment(); break;
+    case 'get_classes_groups' : get_classes_groups(); break;
+    
     default:
 
     break;
