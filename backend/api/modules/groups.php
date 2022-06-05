@@ -360,15 +360,17 @@ function get_group_tests()
 
 	if ($AccessLevel) {
 		if (isset($R['point'])) {
-			$q = $DB->prepare("SELECT $table_name.*, tests.name, tests.description, images.url \"ico_url\"
-			from $table_name left join tests on $table_name.ref_test_id = tests.test_id
+			$q = $DB->prepare("SELECT $table_name.*, tests.name, tests.description, images.url \"ico_url\", 
+			(SELECT count(results.res_id) from results where results.ref_test_id = gtests.gt_id and results.gr_id = :gr_id and results.usr_id = :usr_id and results.ready = 1) as \"my_results\" 
+			from $table_name left join tests on $table_name.ref_test_id = tests.test_id,
 			left join images on tests.ico = images.img_id
 			where $table_name.gr_id = :gr_id 
 			and $table_name.gt_id $sign :point
 			order by $table_name.gt_id $insertDesc limit :count");
 			$q->bindValue('point', $R['point'], PDO::PARAM_INT);
 		} else {
-			$q = $DB->prepare("SELECT $table_name.*, tests.name, tests.description, images.url \"ico_url\"
+			$q = $DB->prepare("SELECT $table_name.*, tests.name, tests.description, images.url \"ico_url\", 
+			(SELECT count(results.res_id) from results where results.ref_test_id = gtests.gt_id and results.gr_id = :gr_id and results.usr_id = :usr_id and results.ready = 1) as \"my_results\" 
 			from $table_name left join tests on $table_name.ref_test_id = tests.test_id 
 			left join images on tests.ico = images.img_id
 			where $table_name.gr_id = :gr_id
@@ -376,6 +378,7 @@ function get_group_tests()
 		}
 		$q->bindValue('gr_id', $R['gr_id'], PDO::PARAM_INT);
 		$q->bindValue('count', $count, PDO::PARAM_INT);
+		$q->bindValue('usr_id', $ME['usr_id'], PDO::PARAM_INT);
 		$q->execute();
 		if (empty($q->errorInfo()[1])) {
 			$rows = $q->fetchALL(PDO::FETCH_ASSOC);
@@ -648,7 +651,8 @@ function get_all_groups_tests()
 	$list = ['error' => 'Ошибка'];
 	if($ME['user_type'] == 'admin' || $ME['user_type'] == 'mentor' ){
 		$list = GetAutoList("SELECT gtests.*, images.url \"test_ico_url\", images_gr.url \"group_ico_url\", tests.name, tests.description,
-		users.avatar, groups.name as \"group_name\"
+		users.avatar, groups.name as \"group_name\", 
+		(SELECT count(results.res_id) from results where results.ref_test_id = gtests.gt_id and results.gr_id = groups.gr_id and results.ready = 1 and  results.usr_id = :usr_id) as \"my_results\" 
 		from gtests left join tests on gtests.ref_test_id = tests.test_id 
 		inner join groups on (groups.gr_id = gtests.gr_id)
 		left join users on (groups.usr_id = users.usr_id)
@@ -658,7 +662,8 @@ function get_all_groups_tests()
 		and groups.closed = false", 'gtests', 'gr_id');
 	}else{
 		$list = GetAutoList("SELECT gtests.*, images.url \"test_ico_url\", images_gr.url \"group_ico_url\", tests.name, tests.description,
-		users.avatar, groups.name as \"group_name\"
+		users.avatar, groups.name as \"group_name\", 
+		(SELECT count(results.res_id) from results where results.ref_test_id = gtests.gt_id and results.gr_id = groups.gr_id and results.ready = 1 and results.usr_id = :usr_id) as \"my_results\"  
 		from gtests left join tests on gtests.ref_test_id = tests.test_id 
 		inner join requests on (requests.gr_id = gtests.gr_id)
 		inner join groups on (groups.gr_id = gtests.gr_id)
