@@ -1,5 +1,23 @@
 <?php
 
+function adm_get_statistics(){
+    global $R, $DB, $ME, $RET;
+
+    $q = $DB->query("SELECT 
+        (SELECT count(usr_id) from users ) as \"count_users\", 
+        (SELECT count(gr_id) from groups ) as \"count_groups\", 
+        (SELECT count(test_id) from tests ) as \"count_tests\", 
+        (SELECT count(res_id) from results ) as \"count_results\", 
+        (SELECT count(img_id) from images) as \"count_images\", 
+        (SELECT sum(size) from images ) as \"images_size\"  
+    ");
+    if($row = $q->fetch(PDO::FETCH_ASSOC)){
+        $RET = ['data'=>$row];
+    }else{
+        $RET = ['error'=>'Ошибка'];
+    }
+}
+
 function adm_get_users(){
     global $R, $DB, $ME, $RET;
 
@@ -66,20 +84,20 @@ function adm_user_save(){
 function adm_user_delete(){
     global $R, $DB, $ME, $RET;
 
-    $qr = $DB->prepare("SELECT def_users.creator_usr_id, users.usr_id from users 
+    $qr = $DB->prepare("SELECT def_users.creator_usr_id, users.usr_id, users.user_type from users 
         left join def_users on (users.social_network = 'def' and users.social_id = def_users.def_usr_id) 
         where usr_id = :usr_id limit 1");
     $qr->bindValue('usr_id', $R['usr_id'], PDO::PARAM_INT);
     $qr->execute();
     if($row = $qr->fetch(PDO::FETCH_ASSOC)){
-        if( ($ME['user_type'] == 'admin' || ($ME['user_type'] == 'mentor' && $row['creator_usr_id'] == $ME['usr_id'] ))  ){
+        if( $ME['user_type'] == 'admin' && $row['user_type'] != 'admin' ){
             $q = $DB->prepare("DELETE FROM users where usr_id = :usr_id");
             $q->bindValue('usr_id', $R['usr_id'], PDO::PARAM_INT);
             $q->execute();
             if(empty($q->errorInfo()[1])){
                 $RET = ['data'=> $R['usr_id']];
             }else{
-                $RET = ['error'=> $q->errorInfo()[2] ];//'Ошибка удаления'];
+                $RET = ['error'=> 'В базе данных имеются записи, которые ссылаются на этого пользователя. Вероятно, пользователь является куратором группы.' ];//'Ошибка удаления'];
             }
         }else{
             $RET = ['error'=> 'Недостаточно прав'];
@@ -191,14 +209,26 @@ function adm_def_user_save(){
 function adm_def_user_delete(){
     global $R, $DB, $ME, $RET;
     
-    $q = $DB->prepare("DELETE FROM def_users where def_usr_id = :def_usr_id");
-    $q->bindValue('def_usr_id', $R['def_usr_id'], PDO::PARAM_INT);
-    $q->execute();
-    if(empty($q->errorInfo()[1])){
-        $RET = ['data'=> $R['def_usr_id']];
+    $qs = $DB->prepare("SELECT * from def_users where def_usr_id = :def_usr_id limit 1");
+    $qs->bindValue('def_usr_id', $R['def_usr_id'], PDO::PARAM_INT);
+    $qs->execute();
+    if($row = $qs->fetch(PDO::FETCH_ASSOC)){
+        if($row['user_type'] != 'admin'){
+            $q = $DB->prepare("DELETE FROM def_users where def_usr_id = :def_usr_id");
+            $q->bindValue('def_usr_id', $R['def_usr_id'], PDO::PARAM_INT);
+            $q->execute();
+            if(empty($q->errorInfo()[1])){
+                $RET = ['data'=> $R['def_usr_id']];
+            }else{
+                $RET = ['error'=> 'Ошибка удаления'];
+            }
+        }else{
+            $RET = ['error'=> 'Недостаточно прав'];
+        }
     }else{
-        $RET = ['error'=> 'Ошибка удаления'];
+        $RET = ['error'=> 'Аккаунт не найден'];
     }
+    
 }
 
 //Классы:
@@ -330,23 +360,119 @@ function adm_get_groups(){
         $text = '%'.trim($R['findText']).'%';
         $number = intval($R['findText']);
         if(is_numeric($R['findText']) ){
-            $RET = GetAutoList("SELECT groups.*
-                from groups where (name LIKE :name or description LIKE :description or gr_id = :gr_id) ", 
+            $RET = GetAutoList("SELECT groups.*, (CONCAT(users.last_name, CONCAT(' ', users.first_name))) as \"autor_name\" 
+                from groups 
+                left join users on users.usr_id = groups.usr_id 
+                where (name LIKE :name or description LIKE :description or gr_id = :gr_id or (CONCAT(users.last_name, CONCAT(' ', users.first_name))) LIKE :name) ", 
             'groups', 'gr_id', [
             ['name', $text, PDO::PARAM_STR],
             ['description', $text, PDO::PARAM_STR],
             ['gr_id', $number, PDO::PARAM_INT]
             ]);
         }else{
-            $RET = GetAutoList("SELECT  groups.* 
-                from groups where (name LIKE :name or description LIKE :description)  ", 
+            $RET = GetAutoList("SELECT  groups.*, (CONCAT(users.last_name, CONCAT(' ', users.first_name))) as \"autor_name\" 
+                from groups 
+                left join users on users.usr_id = groups.usr_id  
+                where (name LIKE :name or description LIKE :description or (CONCAT(users.last_name, CONCAT(' ', users.first_name))) LIKE :name)  ", 
             'groups', 'gr_id', [
             ['name', $text, PDO::PARAM_STR],
             ['description', $text, PDO::PARAM_STR],
             ]);
         }
     }else{
-        $RET = GetAutoList("SELECT groups.* from groups", 'groups', 'gr_id');
+        $RET = GetAutoList("SELECT groups.*, (CONCAT(users.last_name, CONCAT(' ', users.first_name))) as \"autor_name\" 
+        from groups 
+        left join users on users.usr_id = groups.usr_id
+        ", 'groups', 'gr_id');
+    }
+}
+
+function adm_get_group(){
+    global $R, $DB, $ME, $RET;
+    $q = $DB->prepare("SELECT * from groups where gr_id = :gr_id limit 1");
+    $q->bindValue('gr_id', $R['gr_id'], PDO::PARAM_INT);
+    $q->execute();
+    if($row = $q->fetch(PDO::FETCH_ASSOC)){
+        $q2 = $DB->prepare("SELECT users.* from users 
+        where usr_id = :usr_id limit 1");
+        $q2->bindValue('usr_id', $row['usr_id'], PDO::PARAM_INT);
+        $q2->execute();
+        $user = $q2->fetch(PDO::FETCH_ASSOC);
+        $RET = [
+            'data'=>$row,
+            'user'=>$user,
+        ];
+    }else{
+        $RET = [
+            'error'=>'Ошибка',
+        ];
+    }
+}
+
+function adm_group_save(){
+    global $R, $DB, $ME, $RET;
+    
+    if( is_null($R['data']['gr_id']) ){ //Создание
+        $incorrectData = false;
+        if(strlen($R['data']['name'])>1){
+            $q = $DB->prepare("INSERT INTO groups (name, description, usr_id, closed, private) VALUES (:name, :description, :usr_id, :closed, :private)");
+            BindExecute($q, [
+                ['name', $R['data']['name'], PDO::PARAM_STR],
+                ['description', $R['data']['description'], PDO::PARAM_STR],
+                ['usr_id', $R['data']['usr_id'], PDO::PARAM_INT],
+                ['closed', $R['data']['closed'], PDO::PARAM_BOOL],
+                ['private', $R['data']['private'], PDO::PARAM_BOOL],
+            ]);
+        }else{$incorrectData = true;}
+        
+        if($incorrectData == false && empty($q->errorInfo()[1])){
+            $q2 = $DB->prepare("SELECT groups.*,  (CONCAT(users.last_name, CONCAT(' ', users.first_name))) as \"autor_name\" from groups 
+                left join users on users.usr_id = groups.usr_id 
+                where groups.usr_id = :usr_id order by gr_id desc limit 1");
+            BindExecute($q2, [['usr_id', $R['data']['usr_id'], PDO::PARAM_INT]]);
+            if($row = $q2->fetch(PDO::FETCH_ASSOC)){
+                $RET = ['data'=>$row, 'event'=>'onCreated'];
+            }else{
+                $RET = ['error'=>'Ошибка'];
+            }  
+        }else{
+            $RET = ['error'=>'Некорректные данные'];
+        }
+    }else{ //Редактирование
+        $incorrectData = false;
+        if(strlen($R['data']['name'])>1){
+            $q = $DB->prepare("UPDATE groups set name = :name, description = :description, usr_id = :usr_id, closed = :closed, private = :private where gr_id = :gr_id");
+            BindExecute($q, [
+                ['name', $R['data']['name'], PDO::PARAM_STR],
+                ['description', $R['data']['description'], PDO::PARAM_STR],
+                ['usr_id', $R['data']['usr_id'], PDO::PARAM_INT],
+                ['closed', $R['data']['closed'], PDO::PARAM_BOOL],
+                ['private', $R['data']['private'], PDO::PARAM_BOOL],
+                ['gr_id', $R['data']['gr_id'], PDO::PARAM_INT],
+            ]);
+        }else{$incorrectData = true;}
+        $q2 = $DB->prepare("SELECT groups.*,  (CONCAT(users.last_name, CONCAT(' ', users.first_name))) as \"autor_name\" from groups 
+                left join users on users.usr_id = groups.usr_id 
+                where gr_id = :gr_id limit 1");
+        BindExecute($q2, [['gr_id', $R['data']['gr_id'], PDO::PARAM_INT]]);
+        if($row = $q2->fetch(PDO::FETCH_ASSOC)){
+            $RET = ['data'=>$row, 'event'=>'onEdited'];
+        }else{
+            $RET = ['error'=>'Ошибка'];
+        }
+    }
+}
+
+function adm_group_delete(){
+    global $R, $DB, $ME, $RET;
+    
+    $q = $DB->prepare("DELETE FROM groups where gr_id = :gr_id");
+    $q->bindValue('gr_id', $R['gr_id'], PDO::PARAM_INT);
+    $q->execute();
+    if(empty($q->errorInfo()[1])){
+        $RET = ['data'=> $R['gr_id']];
+    }else{
+        $RET = ['error'=> 'Ошибка удаления'];
     }
 }
 

@@ -653,7 +653,7 @@ function get_test_result()
 {
   global $R, $DB, $ME, $RET;
   $res_id = $R['res_id'];
-  $q = $DB->prepare("SELECT results.*,
+  $q = $DB->prepare("SELECT results.*,  
     IF( (results.gr_id > 0), 
     (SELECT images.url from gtests inner join tests `tst` on gtests.ref_test_id = tst.test_id 
       left join images on images.img_id = tst.ico 
@@ -707,6 +707,16 @@ function get_test_result()
     }else{
       $row['chronology'] = null;
     }
+
+			//START: Присвоение системы оценивания результатам:
+			$assessmentDefault = '';
+			$qas = $DB->prepare("SELECT assessment, (SELECT assessment from groups where gr_id = :gr_id limit 1) as \"assessment_default\" from gtests where gt_id = :gt_id limit 1");
+			BindExecute($qas, [['gr_id', $row['gr_id'], PDO::PARAM_INT], ['gt_id', $row['ref_test_id'], PDO::PARAM_INT]]);
+			if( $row_assess = $qas->fetch(PDO::FETCH_ASSOC)){
+				$assessmentDefault = (isset($row_assess['assessment']) && strlen($row_assess['assessment']) > 0 ) ? $row_assess['assessment'] : $row_assess['assessment_default'];
+			}
+			$row['assessment'] = $assessmentDefault;
+			//END: Присвоение системы оценивания результатам:
     
     $RET = ['data' => $row];
   } else {

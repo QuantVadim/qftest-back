@@ -128,7 +128,11 @@ if($ME['user_type'] == 'admin'){
         case 'adm_community_delete': adm_community_delete(); break;
 
         case 'adm_get_groups': adm_get_groups(); break;
-        
+        case 'adm_get_group': adm_get_group(); break;
+        case 'adm_group_save': adm_group_save(); break;
+        case 'adm_group_delete': adm_group_delete(); break;
+
+        case 'adm_get_statistics': adm_get_statistics(); break;
         
         default: break;
     }
