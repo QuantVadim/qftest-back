@@ -24,10 +24,11 @@ function create_group()
 {
 	global $R, $DB, $ME, $RET;
 
-	$q = $DB->prepare("INSERT INTO groups (name, description, usr_id) VALUES(:name, :description, :usr_id)");
+	$q = $DB->prepare("INSERT INTO groups (name, description, private, usr_id) VALUES(:name, :description, :private, :usr_id)");
 	$q->bindValue("name", $R['name'], PDO::PARAM_STR);
 	$q->bindValue("description", $R['description'], PDO::PARAM_STR);
 	$q->bindValue("usr_id", $ME['usr_id'], PDO::PARAM_STR);
+	$q->bindValue("private", $R['private'], PDO::PARAM_BOOL);
 	$q->execute();
 	if (empty($q->errorInfo()[1])) {
 		$q2 = $DB->prepare("SELECT gr_id FROM groups where usr_id = :usr_id order by gr_id desc limit 1");
@@ -48,71 +49,96 @@ function get_group_info()
 {
 	global $R, $DB, $ME, $RET;
 
-	$q = $DB->prepare("SELECT groups.*, images.url \"ico_url\" FROM groups left join images on images.img_id = groups.img_id where groups.gr_id = :gr_id limit 1");
+	$q = $DB->prepare("SELECT groups.*, images.url \"ico_url\", 
+		(SELECT memberships.mem_id from memberships inner join groups_default on memberships.com_id = groups_default.com_id where memberships.usr_id = :usr_id and groups_default.gr_id = :gr_id limit 1) \"mem_id\" 
+		FROM groups left join images on images.img_id = groups.img_id where groups.gr_id = :gr_id limit 1");
 	$q->bindValue("gr_id", $R['gr_id'], PDO::PARAM_INT);
+	$q->bindValue("usr_id", $ME['usr_id'], PDO::PARAM_INT);
 	$q->execute();
 	if ($ret = $q->fetch(PDO::FETCH_ASSOC)) {
+		//Установление изображения:
+		if(strlen($ret['ico_url']) > 0){
+			$ret['ico_url'] = LINK.'/uploaded/'.$ret['ico_url']; }else{
+			$ret['ico_url'] = LINK.'/img/group_default.jpg'; 
+		  }//
 		if ($ME['usr_id'] == $ret['usr_id']) {
-      //Установление изображения:
-      if(strlen($ret['ico_url']) > 0){
-        $ret['ico_url'] = LINK.'/uploaded/'.$ret['ico_url']; }else{
-        $ret['ico_url'] = LINK.'/img/group_default.jpg'; 
-      }//
 			$RET = ['data' => $ret];
 		} else {
-			$q2 = $DB->prepare("SELECT groups.* , images.url \"ico_url\", requests.req_id from groups inner join requests on requests.gr_id = groups.gr_id 
+			$q2 = $DB->prepare("SELECT groups.* , images.url \"ico_url\", requests.req_id, requests.accepted, 
+					(SELECT memberships.mem_id from memberships inner join groups_default on memberships.com_id = groups_default.com_id where memberships.usr_id = :usr_id and groups_default.gr_id = :gr_id limit 1) \"mem_id\" 
+					from groups 
+					left join requests on (requests.gr_id = groups.gr_id and requests.usr_id = :usr_id) 
        			 	left join images on images.img_id = groups.img_id 
-					where requests.gr_id = :gr_id and requests.usr_id = :usr_id and requests.accepted = true limit 1 ");
-			$q2->bindValue("gr_id", $R['gr_id'], PDO::PARAM_INT);
-			$q2->bindValue("usr_id", $ME['usr_id'], PDO::PARAM_INT);
-			$q2->execute();
-		$ret2 = $q2->fetch(PDO::FETCH_ASSOC);
-		if(empty($ret2)){
-			$q2 = $DB->prepare("SELECT groups.* , images.url \"ico_url\" from memberships 
-				inner join groups_default on (groups_default.com_id = memberships.com_id and memberships.usr_id = :usr_id and groups_default.gr_id = :gr_id) 
-				left join groups on groups.gr_id = groups_default.gr_id 
-				left join images on images.img_id = groups.img_id 
-				where memberships.usr_id = :usr_id and groups_default.gr_id = :gr_id limit 1 ");
+					where requests.gr_id = :gr_id limit 1 ");
 			$q2->bindValue("gr_id", $R['gr_id'], PDO::PARAM_INT);
 			$q2->bindValue("usr_id", $ME['usr_id'], PDO::PARAM_INT);
 			$q2->execute();
 			$ret2 = $q2->fetch(PDO::FETCH_ASSOC);
+			
+			//Автоматическое принятие в группу, если пользователь находится в классе с этой группой:
+			if(empty($ret2) || is_null($ret2['accepted']) ){
+				$q2 = $DB->prepare("SELECT groups.* , images.url \"ico_url\", 
+					(SELECT memberships.mem_id from memberships inner join groups_default on memberships.com_id = groups_default.com_id where memberships.usr_id = :usr_id and groups_default.gr_id = :gr_id limit 1) \"mem_id\" 
+					from memberships 
+					inner join groups_default on (groups_default.com_id = memberships.com_id and memberships.usr_id = :usr_id and groups_default.gr_id = :gr_id) 
+					left join groups on groups.gr_id = groups_default.gr_id 
+					left join images on images.img_id = groups.img_id 
+					where memberships.usr_id = :usr_id and groups_default.gr_id = :gr_id limit 1 ");
+				$q2->bindValue("gr_id", $R['gr_id'], PDO::PARAM_INT);
+				$q2->bindValue("usr_id", $ME['usr_id'], PDO::PARAM_INT);
+				$q2->execute();
+				$ret2 = $q2->fetch(PDO::FETCH_ASSOC);
+				if($ret2){
+					$qi = $DB->prepare("INSERT into requests (usr_id, gr_id, name, accepted) VALUES(:usr_id, :gr_id, :name, :accepted)");
+					$qi->bindValue("name", $ME['last_name'] . ' ' . $ME['first_name'], PDO::PARAM_STR);
+					$qi->bindValue("usr_id", $ME['usr_id'], PDO::PARAM_INT);
+					$qi->bindValue("gr_id", $R['gr_id'], PDO::PARAM_INT);
+					$qi->bindValue("accepted", true, PDO::PARAM_BOOL);
+					$qi->execute();
+				}
+			}
+			
 			if($ret2){
-				$qi = $DB->prepare("INSERT into requests (usr_id, gr_id, name, accepted) VALUES(:usr_id, :gr_id, :name, :accepted)");
-				$qi->bindValue("name", $ME['last_name'] . ' ' . $ME['first_name'], PDO::PARAM_STR);
-				$qi->bindValue("usr_id", $ME['usr_id'], PDO::PARAM_INT);
-				$qi->bindValue("gr_id", $R['gr_id'], PDO::PARAM_INT);
-				$qi->bindValue("accepted", true, PDO::PARAM_BOOL);
-				$qi->execute();
+				//Установление изображения:
+        		if(strlen($ret2['ico_url']) > 0){
+					$ret2['ico_url'] = LINK.'/uploaded/'.$ret2['ico_url']; }else{
+					$ret2['ico_url'] = LINK.'/img/group_default.jpg'; 
+			  }//
+			  if( isset($ret2['assessment']) && strlen($ret2['assessment']) > 0 ){
+				  if($assess = json_decode($ret2['assessment'])){
+					  $ret2['assessment'] = $assess;
+				  }else{
+					  $ret2['assessment'] = '';
+				  }
+			  }
 			}
-		}
-
-		if ($ret2) {
-			//Установление изображения:
-        	if(strlen($ret2['ico_url']) > 0){
-          		$ret2['ico_url'] = LINK.'/uploaded/'.$ret2['ico_url']; }else{
-          		$ret2['ico_url'] = LINK.'/img/group_default.jpg'; 
-        	}//
-
-		if( isset($ret2['assessment']) && strlen($ret2['assessment']) > 0 ){
-			if($assess = json_decode($ret2['assessment'])){
-				$ret2['assessment'] = $assess;
-			}else{
-				$ret2['assessment'] = '';
+			if ($ret2 && $ret2['accepted'] == 1) {
+        		$RET = ['data' => $ret2];
+			}else if($ret2 && is_null($ret2['accepted']) && isset($ret2['mem_id'])  ){
+				$ret2['accepted'] = 1;
+				$RET = ['data' => $ret2];
+			} else {
+				if($ret2 && $ret2['accepted'] == 0){
+					$RET = [
+						'error'=>'Нет доступа',
+						'data'=>$ret2,
+					];
+				}else if($ret['private'] == 0){
+					$RET = [
+						'error'=>'Нет доступа',
+						'data'=>$ret
+					];
+				}else{
+					$RET = ['error' => 'Нет доступа', 'ret'=>$q2->errorInfo()[2]];
+				}
 			}
-		}
-		
-        $RET = ['data' => $ret2];
-		} else {
-			$RET = ['error' => 'Нет доступа', 'ret'=>$q2->errorInfo()[2]];
-		}
 		}
 	} else {
 		$RET = ['error' => 'Ошибка'];
 	}
 }
 
-function switch_joining_grop()
+function switch_joining_group()
 {
 	global $R, $DB, $ME, $RET;
 	$R['is_joining'];
@@ -140,22 +166,56 @@ function switch_joining_grop()
 	}
 }
 
-
-function join_group()
+function switch_private_group()
 {
 	global $R, $DB, $ME, $RET;
+	$R['is_joining'];
 
-	$parts = explode('/', $R['join_code']);
-	$gr_id = (int)($parts[0]);
-	$join_key = $parts[1];
-	$q = $DB->prepare("SELECT gr_id, join_key, count_users, usr_id from groups where gr_id = :gr_id limit 1");
+	$q = $DB->prepare("SELECT gr_id, usr_id from groups where gr_id = :gr_id limit 1");
+	$q->bindValue("gr_id", $R['gr_id'], PDO::PARAM_INT);
+	$q->execute();
+	if ($group = $q->fetch(PDO::FETCH_ASSOC)) {
+		if ($group['usr_id'] == $ME['usr_id']) {
+			$q2 = $DB->prepare("UPDATE groups set private = :is_private where gr_id = :gr_id");
+			$q2->bindValue("gr_id", $group['gr_id'], PDO::PARAM_INT);
+			$q2->bindValue('is_private', $R['isPrivate'], PDO::PARAM_BOOL);
+			$q2->execute();
+			if (empty($q2->errorInfo()[1])) {
+				$RET = ['data' => 'ok', 'private'=>$R['isPrivate']];
+			} else {
+				$RET = ['error' => 'Ошибка'];
+			}
+		} else {
+			$RET = ['error' => 'Отказано в доступе'];
+		}
+	} else {
+		$RET = ['error' => 'Группа не найдена'];
+	}
+}
+
+
+function join_group(){
+	global $R, $DB, $ME, $RET;
+
+	$gr_id = null;
+	$join_key = '';
+	if(isset($R['join_code'])){
+		$parts = explode('/', $R['join_code']);
+		$gr_id = (int)($parts[0]);
+		$join_key = $parts[1];
+	}else{
+		$gr_id = $R['gr_id'];
+		$join_key = '';
+	}
+	
+	$q = $DB->prepare("SELECT gr_id, join_key, count_users, usr_id, private from groups where gr_id = :gr_id limit 1");
 	$q->bindValue("gr_id", $gr_id, PDO::PARAM_INT);
 	$q->execute();
 	if ($group = $q->fetch(PDO::FETCH_ASSOC)) {
 		if (
 			strlen($group['join_key']) > 0
 			&& $group['join_key'] == $join_key
-			&& $group['usr_id'] != $ME['usr_id']
+			&& $group['usr_id'] != $ME['usr_id'] 
 		) {
 			$q2 = $DB->prepare("INSERT into requests (usr_id, gr_id, name) VALUES(:usr_id, :gr_id, :name)");
 			$q2->bindValue("name", $ME['last_name'] . ' ' . $ME['first_name'], PDO::PARAM_STR);
@@ -170,11 +230,43 @@ function join_group()
 		} else {
 			if ($group['usr_id'] == $ME['usr_id']) {
 				$RET = ['data' => "ok2", 'message' => 'Вы являетесь создателем этой группы'];
-			} else {
+
+			//Вступление в группу, если она не приватная
+			}else if($group['private'] == 0 && isset($gr_id)){
+				$q2 = $DB->prepare("INSERT into requests (usr_id, gr_id, name, accepted) VALUES(:usr_id, :gr_id, :name, :accepted)");
+				$q2->bindValue("name", $ME['last_name'] . ' ' . $ME['first_name'], PDO::PARAM_STR);
+				$q2->bindValue("usr_id", $ME['usr_id'], PDO::PARAM_INT);
+				$q2->bindValue("gr_id", $gr_id, PDO::PARAM_INT);
+				$q2->bindValue("accepted", true, PDO::PARAM_BOOL);
+				$q2->execute();
+				if (empty($q2->errorInfo()[1])) {
+					$RET = ['data' => 'ok', 'message' => 'Заявка на вступление создана'];
+				} else {
+					$RET = ['data' => 'ok', 'message' => 'Заявка на вступление уже была создана ранее'];
+				}
+			}else{
 				$RET = ['error' => 'Ошибка доступа'];
 			}
 		}
 	}
+}
+
+function group_request_delete(){
+	global $R, $DB, $ME, $RET;
+	if(isset($R['gr_id'])){
+		$q = $DB->prepare("DELETE from requests where usr_id = :usr_id and gr_id = :gr_id");
+		$q->bindValue("usr_id", $ME['usr_id'], PDO::PARAM_INT);
+		$q->bindValue("gr_id", $R['gr_id'], PDO::PARAM_INT);
+		$q->execute();
+		if( empty ($q->errorInfo()[1]) ){
+			$RET = ['data'=>'ok'];
+		}else{
+			$RET = ['error'=>'Ошибка'];
+		}
+	}else{
+		$RET = ['error'=>'Ошибка параметров'];
+	}
+
 }
 
 function get_group_users()
@@ -316,6 +408,37 @@ function get_my_groups(){
 		$RET = ['error' => $list];//$q->errorInfo()[2]];
 	}
 }
+
+//Поиск групп
+function get_find_groups(){
+	global $R, $DB, $ME, $RET;
+
+	if(isset($R['findText']) && strlen(trim($R['findText'])) > 0 ){
+		$ftext = '%'.$R['findText'].'%';
+		$list = GetAutoList("SELECT groups.*, images.url \"ico_url\", users.first_name, users.last_name from groups left join users on groups.usr_id = users.usr_id 
+        left join images on groups.img_id = images.img_id 
+        where groups.closed = 0 and groups.private = 0 and
+		groups.name LIKE :find or groups.description LIKE :find" , 'groups', 'gr_id', [['find', $ftext, PDO::PARAM_STR]]);
+	}else{
+		$list = GetAutoList("SELECT groups.*, images.url \"ico_url\", users.first_name, users.last_name from groups left join users on groups.usr_id = users.usr_id 
+        left join images on groups.img_id = images.img_id where 
+		groups.closed = 0 and groups.private = 0 ", 'groups', 'gr_id');
+	}
+	if ( isset($list['data']) ){
+		$rows = $list['data'];
+    for ($i=0; $i < count($rows); $i++) { 
+      //Установление изображения:
+      if(strlen($rows[$i]['ico_url']) > 0){
+        $rows[$i]['ico_url'] = LINK.'/uploaded/'.$rows[$i]['ico_url']; }else{
+        $rows[$i]['ico_url'] = LINK.'/img/group_default.jpg'; 
+      }//
+    }
+    $RET = ['data' => $rows];
+	} else {
+		$RET = ['error' => $list];//$q->errorInfo()[2]];
+	}
+}
+
 
 //Получение списка групп по-умолчанию
 function get_my_groups_default(){

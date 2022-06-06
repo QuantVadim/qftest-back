@@ -701,8 +701,13 @@ function get_test_result()
     if($user = $qu->fetch(PDO::FETCH_ASSOC)){
       $row['user'] = $user;  
     }
-    $row['chronology'] = json_decode($row['chronology'], true);
-    $row['chronology'] = GetNormalChronology($row['chronology']);
+    if($ME['user_type'] == 'admin' || $ME['user_type'] == 'mentor'){
+      $row['chronology'] = json_decode($row['chronology'], true);
+      $row['chronology'] = GetNormalChronology($row['chronology']);
+    }else{
+      $row['chronology'] = null;
+    }
+    
     $RET = ['data' => $row];
   } else {
     $RET = ['error' => 'Решение не найдено'];

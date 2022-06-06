@@ -79,7 +79,8 @@ switch($R['q']){
     case 'get_my_groups_default': get_my_groups_default(); break;
     case 'create_group': create_group(); break;
     case 'get_group_info': get_group_info(); break;
-    case 'switch_joining_grop': switch_joining_grop(); break;
+    case 'switch_joining_group': switch_joining_group(); break;
+    case 'switch_private_group': switch_private_group(); break;
     case 'join_group': join_group(); break;
     case 'get_group_users': get_group_users(); break;
     case 'join_request_action': join_request_action(); break;
@@ -101,6 +102,8 @@ switch($R['q']){
     case 'delete_group' : delete_group(); break;
     case 'group_set_assessment' : group_set_assessment(); break;
     case 'get_classes_groups' : get_classes_groups(); break;
+    case 'get_find_groups' : get_find_groups(); break;
+    case 'group_request_delete' : group_request_delete(); break;
     
     default:
 

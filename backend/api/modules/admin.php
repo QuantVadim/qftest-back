@@ -72,7 +72,7 @@ function adm_user_delete(){
     $qr->bindValue('usr_id', $R['usr_id'], PDO::PARAM_INT);
     $qr->execute();
     if($row = $qr->fetch(PDO::FETCH_ASSOC)){
-        if($ME['user_type'] == 'admin' || ($ME['user_type'] == 'mentor' && $row['creator_usr_id'] == $ME['usr_id'] )){
+        if( ($ME['user_type'] == 'admin' || ($ME['user_type'] == 'mentor' && $row['creator_usr_id'] == $ME['usr_id'] ))  ){
             $q = $DB->prepare("DELETE FROM users where usr_id = :usr_id");
             $q->bindValue('usr_id', $R['usr_id'], PDO::PARAM_INT);
             $q->execute();
