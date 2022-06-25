@@ -49,24 +49,26 @@ $RET = ['error'=> 'Пусто']; //Ответ сервера
 $ME = $R['me'] ? $R['me'] : false; //Пользователь
 
 if($R['q'] != 'login'){
-    $qusr = $DB->prepare("SELECT usr_id, mykey, user_type from users where usr_id = :usr_id limit 1");
+    $qusr = $DB->prepare("SELECT usr_id, mykey, user_type, social_network from users where usr_id = :usr_id limit 1");
 $qusr->bindValue('usr_id', $ME['usr_id'], PDO::PARAM_INT);
 $qusr->execute();
 if($rowusr = $qusr->fetch(PDO::FETCH_ASSOC)){
     $ME['user_type'] = $rowusr['user_type'];
+    $ME['social_network'] = $rowusr['social_network'];
     if($ME['mykey'] != $rowusr['mykey']){
-        echo json_encode($RET);
-        exit;
+        goto END;
     }
 }else{
    $ME = 0;
 }
 }
 
-
-
-switch($R['q']){
+switch ($R['q']){
     case 'login': login(); break;
+}
+
+if( $ME != 0)
+switch($R['q']){
     case 'get_user': get_user(); break;
     case 'test_save': test_save(); break;
     case 'test_send': test_send(); break;
@@ -104,7 +106,7 @@ switch($R['q']){
     case 'get_classes_groups' : get_classes_groups(); break;
     case 'get_find_groups' : get_find_groups(); break;
     case 'group_request_delete' : group_request_delete(); break;
-    
+    case 'user_edit_password' : user_edit_password(); break;
     default:
 
     break;
@@ -139,7 +141,6 @@ if($ME['user_type'] == 'admin'){
 
 }
 
-
-
+END:
 
 echo json_encode($RET) ?>

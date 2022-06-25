@@ -21,18 +21,33 @@ function adm_get_statistics(){
 function adm_get_users(){
     global $R, $DB, $ME, $RET;
 
+    $insertTypes = '';
+    if(isset($R['types'])){
+        $list = explode(',', $R['types']);
+        for ($i=0; $i < count($list); $i++) { 
+            $list[$i] = "users.user_type = '".$list[$i]."'";
+        }
+        if(count($list) > 0){
+            $insertTypes = join(' or ', $list);
+            if(isset($R['findText'])){
+                $insertTypes = " (".$insertTypes.') and ';
+            }else{
+                $insertTypes = ' where ('.$insertTypes.") ";
+            }
+        }
+    }
     if( isset($R['findText']) ){
         $text = '%'.trim($R['findText']).'%';
         $number = intval($R['findText']);
         if(is_numeric($R['findText']) ){
-            $RET = GetAutoList("SELECT * from users where (first_name LIKE :first_name or last_name LIKE :last_name or usr_id = :usr_id) ", 
+            $RET = GetAutoList("SELECT * from users where $insertTypes (first_name LIKE :first_name or last_name LIKE :last_name or usr_id = :usr_id) ", 
             'users', 'usr_id', [
             ['first_name', $text, PDO::PARAM_STR],
             ['last_name', $text, PDO::PARAM_STR],
             ['usr_id', $number, PDO::PARAM_INT]
             ]);
         }else{
-            $RET = GetAutoList("SELECT * from users where (first_name LIKE :first_name or last_name LIKE :last_name) ", 
+            $RET = GetAutoList("SELECT * from users where $insertTypes (first_name LIKE :first_name or last_name LIKE :last_name) ", 
             'users', 'usr_id', [
             ['first_name', $text, PDO::PARAM_STR],
             ['last_name', $text, PDO::PARAM_STR]
@@ -40,7 +55,7 @@ function adm_get_users(){
         }
         
     }else{
-        $RET = GetAutoList("SELECT * from users", 'users', 'usr_id');
+        $RET = GetAutoList("SELECT * from users $insertTypes", 'users', 'usr_id');
     }
 }
 

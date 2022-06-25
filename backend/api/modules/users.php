@@ -19,10 +19,46 @@ function login(){
 
 }
 
+function user_edit_password(){
+    global $R, $DB, $ME, $RET;
+
+    $q = $DB->prepare("SELECT def_users.def_usr_id , def_users.password from users  
+        inner join def_users on users.social_id = def_users.def_usr_id  
+        where users.usr_id = :usr_id and users.social_network = 'def' limit 1 ");
+    $q->bindValue('usr_id', $ME['usr_id'], PDO::PARAM_INT);
+    $q->execute();
+    if($row = $q->fetch(PDO::FETCH_ASSOC)){
+        $errMess = '';
+        $incorrect = 0;
+        if($row['password'] != $R['currentPassword']){
+            $incorrect++;
+            $errMess = 'Текущий пароль неверен';
+        }
+        if( strlen($R['newPassword']) < 6){
+            $incorrect++;
+            $errMess = 'Пароль должен быть равен 6 и более символов';
+        }
+        if($incorrect > 0){
+            $RET = ['error'=>$errMess];
+        }else{
+            $q2 = $DB->prepare("UPDATE def_users set password = :password where def_usr_id = :def_usr_id");
+            $q2->bindValue('def_usr_id', $row['def_usr_id'], PDO::PARAM_INT);
+            $q2->bindValue('password', $R['newPassword'], PDO::PARAM_STR);
+            $q2->execute();
+            if(empty( $q2->errorInfo()[1])){
+                $RET = ['data'=>'Пароль успешно изменен'];
+            }
+        }
+    }else{
+        $RET = ['error' => 'Аккаунт не найден', 'mes'=>$q->errorInfo()[2]];
+    }
+
+}
+
 function get_user(){
     global $R, $DB, $ME, $RET;
     
-    $q = $DB->prepare("SELECT usr_id, first_name, last_name, avatar, user_type FROM users where usr_id = :usr_id limit 1");
+    $q = $DB->prepare("SELECT usr_id, first_name, last_name, avatar, user_type, social_network FROM users where usr_id = :usr_id limit 1");
     $q->bindValue('usr_id', $R['data']['usr_id'], PDO::PARAM_INT);
     $q->execute();
     if($row = $q->fetch(PDO::FETCH_ASSOC)){
