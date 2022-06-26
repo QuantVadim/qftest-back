@@ -129,8 +129,8 @@ function checkCard($origin, $draft){
 //Совмещает предыдущие события решения теста и новые. Возвращает объедененный массив событий решения
 function GetCombineEvents($main, $add){
   $arr1 = []; $arr2 = [];
-  $arr1 = $main;
-  $arr2 = $add;
+  $arr1 =  isset($main) ? $main : [];
+  $arr2 = isset($add) ? $add : [];
 
   $lastTime = 0;
   if( count($arr1) > 0 ){
@@ -268,7 +268,7 @@ function test_send(){
     $qt->bindValue('usr_id', $ME['usr_id'], PDO::PARAM_INT);
     $isResult = true;
   }
-  
+
   $qt->execute();
   if ($origin = $qt->fetch(PDO::FETCH_ASSOC)) {
     $originCards = GetExtractedCards(json_decode($origin['body'], true));
@@ -516,7 +516,7 @@ function GTestResult($gt_id){//Получение/Создание решени�
           $qr->execute();
           $res_id = $qr->fetch(PDO::FETCH_ASSOC)['res_id'];
           //Получение созданного решения теста группы:
-          $q = $DB->prepare("SELECT results.*, images.url \"ico_url\", requests.req_id, tests.usr_id, gtests.date_start, gtests.date_end, gtests.duration_time,
+          $q = $DB->prepare("SELECT results.*, images.url \"ico_url\", requests.req_id, tests.usr_id, gtests.date_start, gtests.date_end, gtests.duration_time,  
             (Select count(*) from results where results.gr_id = gtests.gr_id and results.ref_test_id = gtests.gt_id and results.usr_id = :usr_id and results.ready = true) \"my_attempts\" from results 
             inner join gtests on gtests.gt_id = results.ref_test_id
             inner join tests on gtests.ref_test_id = tests.test_id 
@@ -548,22 +548,26 @@ function save_gtest_result(){
   $newCards = $R['test']['body'];
   $res_id = $R['test']['res_id'];
   $events = $R['events'];
-  $q = $DB->prepare("SELECT body, chronology from results where res_id = :res_id and usr_id = :usr_id limit 1");
+  $q = $DB->prepare("SELECT body, chronology, ready from results where res_id = :res_id and usr_id = :usr_id limit 1");
   BindExecute($q, [['res_id', $res_id, PDO::PARAM_INT], ['usr_id', $ME['usr_id'], PDO::PARAM_INT]]);
   if($row = $q->fetch(PDO::FETCH_ASSOC)){
-    $cards = json_decode($row['body'], true);
-    $newChronology = GetCombineEvents(json_decode($row['chronology'], true), $events);
-    $sCards = TransferAnswers($newCards, $cards); //Перенос ответов
-    $q2 = $DB->prepare("UPDATE results set body = :body , chronology = :chronology where res_id = :res_id and usr_id = :usr_id");
-    BindExecute($q2, [
-      ['body', json_encode( $sCards, JSON_UNESCAPED_UNICODE), PDO::PARAM_STR],
-      ['chronology', json_encode( $newChronology, JSON_UNESCAPED_UNICODE), PDO::PARAM_STR],
-      ['res_id', $res_id, PDO::PARAM_INT], 
-      ['usr_id', $ME['usr_id'], PDO::PARAM_INT]]);
-    if(empty($q2->errorInfo()[1]) ){
-      $RET = ['data'=>$res_id];
+    if($row['ready'] == 0){
+      $cards = json_decode($row['body'], true);
+      $newChronology = GetCombineEvents(json_decode($row['chronology'], true), $events);
+      $sCards = TransferAnswers($newCards, $cards); //Перенос ответов
+      $q2 = $DB->prepare("UPDATE results set body = :body , chronology = :chronology where res_id = :res_id and usr_id = :usr_id");
+      BindExecute($q2, [
+        ['body', json_encode( $sCards, JSON_UNESCAPED_UNICODE), PDO::PARAM_STR],
+        ['chronology', json_encode( $newChronology, JSON_UNESCAPED_UNICODE), PDO::PARAM_STR],
+        ['res_id', $res_id, PDO::PARAM_INT], 
+        ['usr_id', $ME['usr_id'], PDO::PARAM_INT]]);
+      if(empty($q2->errorInfo()[1]) ){
+        $RET = ['data'=>$res_id];
+      }else{
+        $RET = ['error'=>$q2->errorInfo()[2]];
+      }
     }else{
-      $RET = ['error'=>$q2->errorInfo()[2]];
+      $RET = ['data'=>'Тест уже завершен'];
     }
   }else{
     $RET = ['error'=>'Сохранение невозможно. Решение не найдено'];
